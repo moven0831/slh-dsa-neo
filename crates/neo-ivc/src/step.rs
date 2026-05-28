@@ -79,6 +79,14 @@ impl StepPlanOptions {
     /// `c_data_entries = κ × D = 18 × 54 = 972`, `child_count = K_RHO = 14`,
     /// `x_rows = 54`, `x_active_cols = 5`, `r_len = s_col_len = 20`,
     /// `y_ring_inner_lens = [64; 8]`, `y_zcol_len = 64`.
+    ///
+    /// NOTE: `r_len` / `s_col_len` are **circuit-shape dependent** — the `20`
+    /// here matches the shape this preset was originally probed against, but
+    /// the actual value the second `append_assignment` produces depends on the
+    /// step circuit. The `bench_ht_layer_gl` D4 step (m = 467,721) needs
+    /// `r_len = s_col_len = 26`; pass `rfp_smoke_full --r-len 26` (which
+    /// overrides both fields). When in doubt, run once and read the `actual`
+    /// shape from the `PostParentShapeMismatch` error, then re-run with it.
     pub fn production_multistep() -> Self {
         Self {
             c_data_entries: 972,

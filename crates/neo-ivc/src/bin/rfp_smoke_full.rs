@@ -37,14 +37,19 @@ use neo_ivc::step::{build_plan, preprocess_sparse, StepPlanOptions};
 struct Args {
     #[arg(long)]
     r1cs: PathBuf,
-    #[arg(long)]
-    wtns: PathBuf,
+    /// Witness file(s). Pass once to fold the same witness `--n-steps` times
+    /// (synthetic/timing). Pass it repeatedly (`--wtns layer_0.wtns --wtns
+    /// layer_1.wtns ...`) to fold distinct per-layer witnesses in order — the
+    /// real SLH-DSA-128s D4 chain from `slh-poseidon-gl emit-layers`; then
+    /// `--n-steps` is ignored and the step count is the number of files.
+    #[arg(long, required = true)]
+    wtns: Vec<PathBuf>,
     #[arg(long, default_value_t = 0x71C5_0001)]
     seed: u64,
-    /// Number of times the witness is appended to the chain. Use 1 to mirror
-    /// `rfp_smoke`'s single-fold behaviour, 7 to simulate the SLH-DSA-128s
-    /// D4 fold chain. Until T1.1.c lands and emits per-layer witnesses, all
-    /// N appends use the same .wtns.
+    /// Number of times a single witness is appended to the chain. Use 1 to
+    /// mirror `rfp_smoke`'s single-fold behaviour, 7 to simulate the
+    /// SLH-DSA-128s D4 fold chain. Ignored when multiple `--wtns` are given
+    /// (then the step count is the number of witness files).
     #[arg(long, default_value_t = 1)]
     n_steps: usize,
     /// Plan profile. `smoke` is the single-child accumulator (only valid
@@ -87,31 +92,46 @@ fn main() -> Result<()> {
     }
     let t_total = Instant::now();
 
+    // Distinct witnesses → one fold step each; a single witness → repeat it
+    // `--n-steps` times. Determine the effective step count up front because
+    // the plan profile (smoke vs production accumulator) depends on it.
+    let multi_witness = args.wtns.len() > 1;
+    let effective_steps = if multi_witness { args.wtns.len() } else { args.n_steps };
+
     println!("=== 1/6 Parse Circom .r1cs + .wtns ===");
     let t = Instant::now();
     let circom_r1cs = parse_circom_r1cs(&args.r1cs)
         .with_context(|| format!("parsing {}", args.r1cs.display()))?;
-    let circom_wtns = parse_circom_wtns(&args.wtns)
-        .with_context(|| format!("parsing {}", args.wtns.display()))?;
+    let circom_wtns_all = args
+        .wtns
+        .iter()
+        .map(|p| parse_circom_wtns(p).with_context(|| format!("parsing {}", p.display())))
+        .collect::<Result<Vec<_>>>()?;
     println!(
-        "  parsed in {:?}: n_constraints={}, n_wires={}, n_pub_out={}, n_pub_in={}",
+        "  parsed in {:?}: {} witness file(s), n_constraints={}, n_wires={}, n_pub_out={}, n_pub_in={}",
         t.elapsed(),
+        circom_wtns_all.len(),
         circom_r1cs.n_constraints,
         circom_r1cs.n_wires,
         circom_r1cs.n_pub_out,
         circom_r1cs.n_pub_in,
     );
-    if circom_r1cs.n_wires != circom_wtns.n_wires {
-        anyhow::bail!(
-            "wire count mismatch: r1cs={}, wtns={}",
-            circom_r1cs.n_wires,
-            circom_wtns.n_wires,
-        );
+    for (i, w) in circom_wtns_all.iter().enumerate() {
+        if circom_r1cs.n_wires != w.n_wires {
+            anyhow::bail!(
+                "wire count mismatch: r1cs={}, wtns[{i}]={}",
+                circom_r1cs.n_wires,
+                w.n_wires,
+            );
+        }
     }
 
     println!("=== 2/6 Lift to sparse CcsMatrix + build R1cs shape ===");
     let t = Instant::now();
-    let z = circom_witness_to_f(&circom_wtns)?;
+    let zs = circom_wtns_all
+        .iter()
+        .map(circom_witness_to_f)
+        .collect::<Result<Vec<_>>>()?;
     let (a, b, c, n, m, m_in) = circom_to_neo_sparse_mats(&circom_r1cs)?;
     let r1cs = SparseR1cs::new(a, b, c, n, m, m_in)
         .map_err(|e| anyhow::anyhow!("SparseR1cs::new: {e:?}"))?;
@@ -121,26 +141,29 @@ fn main() -> Result<()> {
         r1cs.n,
         r1cs.m,
         r1cs.m_in,
-        z.len(),
+        zs[0].len(),
     );
 
-    println!("=== 3/6 R1CS row-wise satisfaction check ===");
+    println!("=== 3/6 R1CS row-wise satisfaction check ({} witness(es)) ===", zs.len());
     let t = Instant::now();
-    r1cs.is_satisfied_by(&z)
-        .context("Circom witness does not satisfy parsed R1CS — parser/witness bug")?;
+    for (i, z) in zs.iter().enumerate() {
+        r1cs.is_satisfied_by(z)
+            .with_context(|| format!("witness[{i}] does not satisfy parsed R1CS — parser/witness bug"))?;
+    }
     println!("  passed in {:?}", t.elapsed());
 
     let m_used = r1cs.m;
     let m_in_used = r1cs.m_in;
-    let profile = match (args.profile, args.n_steps) {
+    let profile = match (args.profile, effective_steps) {
         (PlanProfile::Smoke, _) => PlanProfile::Smoke,
         (PlanProfile::Production, _) => PlanProfile::Production,
         (PlanProfile::Auto, 1) => PlanProfile::Smoke,
         (PlanProfile::Auto, _) => PlanProfile::Production,
     };
     let mut opts = match profile {
-        PlanProfile::Smoke | PlanProfile::Auto => StepPlanOptions::smoke(),
+        PlanProfile::Smoke => StepPlanOptions::smoke(),
         PlanProfile::Production => StepPlanOptions::production_multistep(),
+        PlanProfile::Auto => unreachable!("Auto is resolved to Smoke/Production above"),
     };
     if let Some(r) = args.r_len {
         opts.parent_r_len = r;
@@ -163,11 +186,17 @@ fn main() -> Result<()> {
     let prep = preprocess_sparse(&r1cs, &plan, args.seed)?;
     println!("  preprocessed in {:?}", t.elapsed());
 
-    let witnesses: Vec<Vec<_>> = std::iter::repeat(z).take(args.n_steps).collect();
+    // One step per distinct witness, or `--n-steps` copies of a single one.
+    let witnesses: Vec<Vec<_>> = if multi_witness {
+        zs
+    } else {
+        let z = zs.into_iter().next().expect("≥1 witness (clap requires --wtns)");
+        vec![z; args.n_steps]
+    };
     if args.close {
         println!(
             "=== 6/6 close_chain ({} append + finish_with_audit + compress) ===",
-            args.n_steps
+            effective_steps
         );
         let t = Instant::now();
         let compressed = close_chain(&prep, witnesses)?;
@@ -183,7 +212,7 @@ fn main() -> Result<()> {
     } else {
         println!(
             "=== 6/6 run_chain ({} append + finish + verify_uncompressed) ===",
-            args.n_steps
+            effective_steps
         );
         let t = Instant::now();
         let finished = run_chain(&prep, witnesses)?;
