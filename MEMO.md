@@ -21,8 +21,9 @@ Extrapolated full D4 chain (7 folds): **~815 s prove**, vs the companion repo's 
 |---|---|
 | `crates/neo-ivc/src/bin/nifs_smoke.rs` | Original Phase-2 binary. Demonstrates the `b = 2` binary-witness rejection from `direct_ccs::build_instance`. <0.3 s. |
 | `crates/neo-ivc/src/bin/rfp_smoke.rs` | **Pivot A binary.** Runs `r1cs_f_prime` end-to-end (preprocess → chain.append → finish → verify_uncompressed) on a Circom Goldilocks R1CS. Supports `--sparse` for circuits beyond ~10K wires. 5 s on smoke, 227 s on HT-layer. |
+| `crates/neo-ivc/src/{step,chain,finisher}.rs` | **Library API** (Session 2026-05-28). `step::build_plan` + `step::preprocess_sparse` extract the rfp_smoke plan-construction. `chain::run_chain` appends multiple witnesses against one preprocessing then finishes. `finisher::close_chain` uses the audit-mode `compress` path to produce a `Compressed` proof + verifier. Builds clean; multi-step run not yet measured. |
 | `crates/neo-bridge/` | Circom `.r1cs` + `.wtns` parser + dense and sparse lift to `neo_ccs` matrices |
-| `crates/slh-poseidon-gl/` | Skeleton (not implemented) |
+| `crates/slh-poseidon-gl/` | **Permutation + F/H/T_k/T_len implemented** (Session 2026-05-28). Plonky2 Poseidon t=12 byte-matches 4 Plonky2 reference vectors. SlhF/SlhH/SlhTk byte-match Circom witnesses from `slh-dsa-circuit/build/poseidon_gl_bench/`. SlhTlen structurally validated (no Circom witness exists yet). H_msg and full SLH-DSA-128s signer still stubbed. |
 | `crates/neo-bench/` | Criterion bench placeholders (not wired) |
 
 ## Measured numbers
@@ -120,6 +121,113 @@ The original Pivot A goal was to settle whether folding via `r1cs_f_prime` is co
 Next moves:
 - **Pivot B** — Spartan2-GL monolithic bench (no folding). Cleanest comparison to the companion's secq256r1 monolith; quantifies the small-field benefit honestly. Reuses the Goldilocks Poseidon port. Recommended next step.
 - **Pivot C** — LatticeFold gadget-norm fix at verify. 5× decomposition vs Nightstream's 64× — *if* the verify-side bug fix lands (~1 engineer-day per `poseidon_gl_audit.md` line 144), a re-run of `rfp_smoke`-equivalent on LatticeFold could be ~6–9 s/step instead of 116.6 s/step. The most plausible path to a competitive folded number.
+
+## Session 2026-05-28 — Pivot A "Finish" track progress
+
+User-approved scope: complete Pivot A (slh-dsa-neo) + add Spartan2-GL baseline
+to the companion repo. This session covered T1.1.a/b + T1.2/T1.3/T1.4 of the
+12-task plan in `~/.claude/plans/is-there-anything-we-glittery-unicorn.md`.
+
+**Implemented and tested:**
+
+- `slh-poseidon-gl::poseidon` — Plonky2 v1.1.0 Poseidon-Goldilocks permutation
+  (t=12, 30 rounds, x⁷ S-box). Byte-matches all 4 Plonky2 reference vectors
+  (`zeros`, `range`, `neg_one`, `random`) from
+  `slh-dsa-circuit/scripts/check_poseidon_gl.py`. Naive u128-mod-P reduction
+  (correctness over speed — reference signer, not a hot path).
+- `slh-poseidon-gl::poseidon` — `PoseidonGl(N)` (N ≤ 12), `PoseidonGlSponge14`
+  (rate-8 sponge for arity-14 hashes), `PoseidonGlReduce(N)` (binary Merkle
+  tree), `pack_bytes16_to_2fe` / `unpack_fe2_to_bytes16`.
+- `slh-poseidon-gl::primitives` — `SlhF` (arity-12), `SlhH` (arity-14 sponge),
+  `SlhTk` (Merkle reduce of 14 leaves + mix), `SlhTlen` (35 leaves + mix).
+  Validated **byte-for-byte against Circom witnesses** from
+  `build/poseidon_gl_bench/bench_slh_{f,h,tk}_gl/witness.wtns` (input.json
+  = pk_seed [1..16], all-zero ADRS, m [17..]). SlhTlen structurally validated
+  (no Circom witness exists yet for it).
+- `neo-ivc::step` — `build_plan(m, m_in, opts)` + `preprocess_sparse(r1cs, plan, seed)`.
+  Hoists the F'-shell plan construction out of `bin/rfp_smoke.rs`.
+  `StepPlanOptions::PRODUCTION` = `c_data_entries = 972` (κ × D).
+- `neo-ivc::chain` — `run_chain(prep, witnesses) → Uncompressed`. Multi-step
+  IVC chain that threads N witnesses through one `R1csChainBuilder` and
+  finishes. Compiles; not yet measured end-to-end on real data.
+- `neo-ivc::finisher` — `close_chain(prep, witnesses) → Compressed`. Uses the
+  audit-mode flow (`finish_with_audit` + `lifecycle::compress`) to produce
+  a closed proof.
+
+**API gap surfaced (revises plan):**
+
+- The original plan's Track 1.4 referenced `neo_fold_prototype::lifecycle::finish_direct_ccs_with_spartan`
+  as the Spartan2-GL closer. Verification: that entry point exists only for
+  the `direct_ccs` and `rv32im` frontends. **There is no
+  `finish_r1cs_f_prime_with_spartan` in Nightstream `755c1595`.** The
+  canonical close for `r1cs_f_prime` is `lifecycle::compress` →
+  `Compressed`. A true Spartan2-GL final SNARK on `r1cs_f_prime` would need
+  custom plumbing: `lifecycle::build_decider_statement` →
+  `decider::Statement` → standalone `spartan2::R1CSSNARK<GoldilocksP3MerkleMleEngine>`.
+  Track 1.4 in this session implements the `compress` path. A true
+  Spartan2-GL closing SNARK measurement remains separate work.
+
+- **Runtime test of `compress` (Session 2026-05-28)**: smoke single-step
+  `--close` returns `Decider(Unsupported)` at runtime. `compress.rs:4-5`
+  confirms: *"the PR5 decider is not implemented yet, so public `compress`
+  / compressed `verify` return `decider::Error::Unsupported`"*. So at
+  Nightstream `755c1595`, **there is no functional closing-SNARK path for
+  `r1cs_f_prime`** — only `Uncompressed` is verifiable. The `close_chain`
+  / `verify_compressed` library functions are kept in place for when
+  upstream lands the decider, with the top-of-file note in
+  `crates/neo-ivc/src/finisher.rs` documenting the gap. Track 1.4-bis
+  options: (a) upgrade Nightstream to a commit where `decider::prove`
+  works, or (b) custom-plumb `build_decider_statement` →
+  `decider::Statement` → standalone Spartan2-GL adapter (same adapter
+  Track 2.2 will need).
+
+**First multi-step measurement (Session 2026-05-28, smoke circuit):**
+
+Ran `rfp_smoke_full --n-steps 2 --profile production --r-len 23` on
+`bench_poseidon_gl_reduce2` (440 R1CS, 445 wires). The Nightstream
+recursive-compile probe required the full production-params accumulator
+shape (`c_data_entries = 972 = κ × D`, `child_count = 14 = K_RHO`,
+`x_rows = 54`, `x_active_cols = 5`, `y_ring_inner_lens = [64; 8]`,
+`y_zcol_len = 64`, `r_len = s_col_len = 23` for this m). Constants
+extracted from the `PostParentShapeMismatch` error (the same
+"probe-and-extract" pattern Nightstream's `make_tiny_lifecycle_plan` uses
+at `r1cs_compiler.rs:580`).
+
+| Stage | Time |
+|---|---:|
+| Preprocess (Ajtai setup, c=972) | **14.4 s** |
+| 2 × append + finish | **89.8 s** (≈ 44.9 s / step) |
+| `verify_uncompressed` | 5.2 s |
+| **Total** | **109.4 s** |
+| Peak RSS | **9.99 GB** |
+
+Compare with Pivot A's single-step smoke at c=2: 2.07 s prove+finish per
+step. Per-step prove cost grew **~22×** on the 440-R1CS smoke when
+switching c=2 → c=972. The Ajtai-setup grew **~8.5×** (1.7 s → 14.4 s).
+This is the **first measured floor overhead** for the production-params
+accumulator on a real Circom Goldilocks R1CS — the 10–20% per-step growth
+flagged in `week3_findings.md` §1 was correct *as a percentage of the
+underlying-row cost*, but in absolute terms the smoke circuit's
+44.9 s/step is dominated by accumulator overhead, not underlying-row work.
+On the HT-layer (m=467K, limbs=30M) the underlying-row cost (3.9 µs/row ×
+30M ≈ 117 s) should still dominate, so the multi-step per-step prove may
+land closer to 130–140 s/step than 22× × 116.6 s. Open question pending
+the HT-layer run.
+
+**Open from the plan:**
+
+- T1.1.c — full SLH-DSA-128s signer (sign/verify control flow + SlhHMsg).
+  Largest remaining item; the per-primitive Poseidon machinery to call is
+  done.
+- T1.1.d — signer CLI emitting per-XMSS-layer and monolithic witnesses.
+- T1.5 — `rfp_smoke_full` end-to-end binary. Possible to ship a "multi-N
+  same-witness" version using existing `all_zeros.wtns` × N before the real
+  signer lands, to capture per-step prove-cost growth at `c_data_entries=972`.
+- T2.1 — `main_poseidon_gl.circom` monolithic main circuit. Blocked on
+  `SlhHMsg` template not existing in `hashes_gl.circom`.
+- T2.2 — `slh-dsa-spartan2-gl` bench crate in the companion repo (uses
+  validated `R1CSSNARK<GoldilocksP3MerkleMleEngine>` standalone API).
+- T2.3 — three-row results table.
 
 ## Methodology
 
