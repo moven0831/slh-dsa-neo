@@ -110,7 +110,7 @@ Caveats:
 | `r1cs_f_prime` structure shape `m × 64 + 1` | ✅ | Verified: HT-layer measured `limbs = 29,934,145` matches `467,721 × 64 + 1` exactly |
 | Production-params `r1cs_f_prime` runs on Circom Goldilocks R1CS | ✅ | Measured `rfp_smoke` on smoke + HT-layer |
 | **Real SLH-DSA signature layer folds + verifies** (1 HT-layer step) | ✅ | `emit-layers` → `layer_0.wtns` → `rfp_smoke_full --n-steps 1`: R1CS-sat ✓, preprocess 90.6 s, prove+finish 139.2 s, verify_uncompressed 28.9 s — **PASS**. All 7 layers chain to `pk_root` in the per-layer circuit. |
-| Full 7-step IVC chain at production with proper `c_data_entries = κ × D = 972` | ❌ | Per-step extrapolation only (smoke multi-step c=972 measured; real per-layer 7-step pending) |
+| Multi-step real chain at HT-layer scale + production accumulator (`c=972`) | ❌ (memory-bound) | `rfp_smoke_full` multi-`--wtns` parses 7 real witnesses, sat-checks all, builds the plan (`r_len = 26`, surfaced via `PostParentShapeMismatch`), and preprocesses cleanly — but the fold phase exceeds the 24 GB box. Even a 2-step chain peaked **14.24 GB RSS / 130 GB committed** before a macOS memory-pressure kill; 7-step SIGKILLed. The `c=972` accumulator completes on the 440-R1CS smoke circuit (9.99 GB) but not the 486K-R1CS HT-layer shell (30M F' rows). **Needs 32 GB+** — machinery + shapes are correct, it's a RAM ceiling. |
 | Spartan2-GL finisher closes the chain into a small proof | ❌ | Not measured — `Decider(Unsupported)` at Nightstream 755c1595 |
 
 ## How to reproduce
@@ -262,13 +262,16 @@ the HT-layer run.
 
 **Still open:**
 
-- Full 7-step folded chain on the **real** per-layer witnesses (one `.wtns`
-  per layer) at `c_data_entries = 972`, to replace the per-step extrapolation
-  in Row 3's full-chain total. `rfp_smoke_full` currently appends a single
-  `.wtns` N times; this needs a small multi-witness flag (the 7 real `.wtns`
-  already exist via `emit-layers` + the circom WASM calculator). Per-step cost
-  is already measured real (139 s/step), so this is plumbing + a ~13-min run,
-  no new research risk.
+- Full multi-step folded chain on the **real** per-layer witnesses at
+  `c_data_entries = 972`. The plumbing is **done** — `rfp_smoke_full` takes
+  repeated `--wtns` (the 7 real `.wtns` from `emit-layers`), and the
+  `r_len = 26` shape is fixed. But it's **memory-bound on 24 GB**: the fold
+  phase OOMs (2-step peaked 14.24 GB RSS / 130 GB committed before a
+  memory-pressure kill; 7-step SIGKILLed). The `c=972` accumulator fits the
+  440-R1CS smoke circuit but not the 486K-R1CS HT-layer shell. **Needs a
+  32 GB+ box** — re-run `rfp_smoke_full --profile production --r-len 26
+  --wtns layer_0.wtns … --wtns layer_6.wtns` there. Per-step cost is already
+  real-measured (139 s/step); only the full-chain total is gated on RAM.
 - Track 1.4-bis — true Spartan2-GL closing SNARK on `r1cs_f_prime`
   (`Decider(Unsupported)` at Nightstream 755c1595; needs custom plumbing
   through `build_decider_statement` + the standalone Spartan2-GL adapter
