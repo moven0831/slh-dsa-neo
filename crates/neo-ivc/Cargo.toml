@@ -31,3 +31,7 @@ path = "src/bin/nifs_smoke.rs"
 [[bin]]
 name = "rfp_smoke"
 path = "src/bin/rfp_smoke.rs"
+
+[[bin]]
+name = "rfp_smoke_full"
+path = "src/bin/rfp_smoke_full.rs"
