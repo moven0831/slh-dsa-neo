@@ -15,16 +15,17 @@
 //! construction used by the secq256r1 Poseidon family.
 
 use crate::poseidon::{
-    pack_bytes16_to_2fe, poseidon_gl, poseidon_gl_reduce, poseidon_gl_sponge14,
-    unpack_fe2_to_bytes16,
+    pack_bytes16_to_2fe, poseidon_gl, poseidon_gl_hash30, poseidon_gl_reduce,
+    poseidon_gl_sponge14, unpack_fe2_to_bytes16,
 };
 
 const TAG_F: u64 = 0;
 const TAG_H: u64 = 1;
 const TAG_TK: u64 = 2;
 const TAG_TLEN: u64 = 3;
-#[allow(dead_code)]
-const TAG_HMSG: u64 = 4;
+// TAG_HMSG = 4 is documented in the Circom hashes_gl.circom header but the
+// secq256r1 SlhHMsg construction (which Goldilocks mirrors) embeds its own
+// sub-tags 0/1 inside PoseidonGlHash30 rather than passing an outer tag.
 
 /// FIPS 205 ADRS (32 bytes) projected into 7 Goldilocks field elements.
 /// Field names match the unsuffixed Circom signals in `hashes_gl.circom`.
@@ -98,6 +99,43 @@ pub fn slh_tk(pk_seed: &[u8; 16], adrs: &Adrs, leaves: &[[u8; 16]]) -> [u8; 16] 
 /// Same construction as `slh_tk` but with `TAG_TLEN`.
 pub fn slh_tlen(pk_seed: &[u8; 16], adrs: &Adrs, leaves: &[[u8; 16]]) -> [u8; 16] {
     slh_tk_or_tlen(pk_seed, adrs, leaves, TAG_TLEN)
+}
+
+/// SLH `H_msg` primitive: message-digest used by the full verifier.
+/// Mirrors `SlhHMsg` in `circuits/poseidon_gl/hashes_gl.circom`:
+///   - Pack r / pk_seed / pk_root each into a `(lo, hi)` Goldilocks pair.
+///   - Pack the 1024-byte message into 64 such pairs.
+///   - Merkle-reduce the 64 pairs via `poseidon_gl_reduce`.
+///   - Feed [r, pk_seed, pk_root, msg_digest] (4 pairs = 8 FEs) into
+///     `poseidon_gl_hash30(4)` → 30 bytes.
+///
+/// Domain separation: `poseidon_gl_hash30` uses internal sub-tags 0/1 — no
+/// outer HMsg=4 tag, matching the secq256r1 family's convention.
+pub fn slh_hmsg(
+    r: &[u8; 16],
+    pk_seed: &[u8; 16],
+    pk_root: &[u8; 16],
+    m: &[u8; 1024],
+) -> [u8; 30] {
+    let (r_lo, r_hi) = pack_bytes16_to_2fe(r);
+    let (pk_seed_lo, pk_seed_hi) = pack_bytes16_to_2fe(pk_seed);
+    let (pk_root_lo, pk_root_hi) = pack_bytes16_to_2fe(pk_root);
+
+    // Pack m[1024] into 64 (lo, hi) pairs.
+    let (m_lo, m_hi): (Vec<u64>, Vec<u64>) = (0..64)
+        .map(|i| {
+            let chunk: &[u8; 16] = (&m[i * 16..(i + 1) * 16])
+                .try_into()
+                .expect("16-byte slice");
+            pack_bytes16_to_2fe(chunk)
+        })
+        .unzip();
+    let (red_lo, red_hi) = poseidon_gl_reduce(&m_lo, &m_hi);
+
+    poseidon_gl_hash30(
+        &[r_lo, pk_seed_lo, pk_root_lo, red_lo],
+        &[r_hi, pk_seed_hi, pk_root_hi, red_hi],
+    )
 }
 
 #[cfg(test)]
@@ -184,6 +222,54 @@ mod tests {
 
     // No Circom witness for bench_slh_tlen_gl exists yet (only .r1cs is built).
     // Validate structurally: deterministic, ADRS-dependent, and TAG-distinct from T_k.
+    #[test]
+    fn slh_hmsg_matches_circom_witness() {
+        // Inputs match `build/poseidon_gl_bench/bench_slh_hmsg_gl/`'s
+        // generate_witness.js run with input.json = {r: 1..16, pk_seed: [9;16],
+        // pk_root: [42;16], m: [0;1024]}. Expected bytes via `snarkjs wtns export
+        // json /tmp/slh_hmsg.wtns` taking w[1..=30].
+        let r = make_pk_seed();         // [1..=16]
+        let pk_seed = [9u8; 16];
+        let pk_root = [42u8; 16];
+        let m = [0u8; 1024];
+        let got = slh_hmsg(&r, &pk_seed, &pk_root, &m);
+        let expected: [u8; 30] = [
+            71, 45, 32, 230, 198, 15, 38, 186, 91, 58,
+            126, 130, 6, 89, 5, 212, 159, 209, 9, 176,
+            184, 29, 191, 94, 114, 85, 197, 22, 98, 173,
+        ];
+        assert_eq!(got, expected, "SlhHMsg output mismatch vs Circom witness");
+    }
+
+    #[test]
+    fn slh_hmsg_each_input_matters() {
+        // Vary each input independently — a slot-swap or ignored-slot bug
+        // in poseidon_gl_hash30 would let two of these come out equal.
+        let r = make_pk_seed();
+        let pk_seed = [9u8; 16];
+        let pk_root = [42u8; 16];
+        let m = [0u8; 1024];
+
+        let baseline = slh_hmsg(&r, &pk_seed, &pk_root, &m);
+
+        let mut r2 = r;       r2[0] ^= 1;
+        let mut pk_seed2 = pk_seed; pk_seed2[0] ^= 1;
+        let mut pk_root2 = pk_root; pk_root2[0] ^= 1;
+        let mut m2 = m;       m2[123] = 7;
+
+        assert_ne!(baseline, slh_hmsg(&r2, &pk_seed,  &pk_root,  &m),  "r ignored");
+        assert_ne!(baseline, slh_hmsg(&r,  &pk_seed2, &pk_root,  &m),  "pk_seed ignored");
+        assert_ne!(baseline, slh_hmsg(&r,  &pk_seed,  &pk_root2, &m),  "pk_root ignored");
+        assert_ne!(baseline, slh_hmsg(&r,  &pk_seed,  &pk_root,  &m2), "m ignored");
+
+        // Slot-swap: r vs pk_seed should yield different outputs.
+        assert_ne!(
+            slh_hmsg(&r, &pk_seed, &pk_root, &m),
+            slh_hmsg(&pk_seed, &r, &pk_root, &m),
+            "swapping r and pk_seed should change the digest"
+        );
+    }
+
     #[test]
     fn slh_tlen_deterministic_and_distinguishable() {
         let pk_seed = make_pk_seed();

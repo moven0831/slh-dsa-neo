@@ -192,6 +192,40 @@ pub fn poseidon_gl_reduce(leaves_lo: &[u64], leaves_hi: &[u64]) -> (u64, u64) {
     (cur_lo[0], cur_hi[0])
 }
 
+/// `PoseidonGlHash30(nInputs)`: two `poseidon_gl` calls with internal
+/// sub-tags 0/1 prepended; concatenate the 16-byte unpack of the first
+/// with the 14 low bytes of the second to produce a 30-byte digest.
+/// Mirrors `circuits/poseidon_gl/poseidon_gl_wrap.circom::PoseidonGlHash30`.
+///
+/// Inputs are nInputs `(lo, hi)` Goldilocks FE pairs, so each call
+/// absorbs `1 (sub_tag) + 2 × nInputs` FEs. Capped at 12 → `nInputs ≤ 5`.
+pub fn poseidon_gl_hash30(inputs_lo: &[u64], inputs_hi: &[u64]) -> [u8; 30] {
+    let n = inputs_lo.len();
+    assert_eq!(n, inputs_hi.len(), "PoseidonGlHash30: lo/hi length mismatch");
+    assert!(n >= 1 && 1 + 2 * n <= 12, "PoseidonGlHash30: nInputs out of range (got {n})");
+
+    let mut buf0: Vec<u64> = Vec::with_capacity(1 + 2 * n);
+    let mut buf1: Vec<u64> = Vec::with_capacity(1 + 2 * n);
+    buf0.push(0);
+    buf1.push(1);
+    for i in 0..n {
+        buf0.push(inputs_lo[i]);
+        buf0.push(inputs_hi[i]);
+        buf1.push(inputs_lo[i]);
+        buf1.push(inputs_hi[i]);
+    }
+    let (p0_lo, p0_hi) = poseidon_gl(&buf0);
+    let (p1_lo, p1_hi) = poseidon_gl(&buf1);
+
+    let b0 = unpack_fe2_to_bytes16(p0_lo, p0_hi);
+    let b1 = unpack_fe2_to_bytes16(p1_lo, p1_hi);
+
+    let mut out = [0u8; 30];
+    out[..16].copy_from_slice(&b0);
+    out[16..].copy_from_slice(&b1[..14]);
+    out
+}
+
 /// `PackBytes16To2Fe`: 16 bytes (little-endian) → `(lo, hi)` Goldilocks FEs.
 /// Matches the Circom assignment `lo <== sum bytes[i] * 256^i`, which implicitly
 /// reduces mod P if the byte sum exceeds the field. So we reduce explicitly here.
