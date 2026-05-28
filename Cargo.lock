@@ -773,6 +773,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "neo-fold-clean"
+version = "0.1.0"
+source = "git+https://github.com/LFDT-Nightstream/Nightstream?rev=755c1595f3b34b5c2bc9eaa50417cdf9dfb871ec#755c1595f3b34b5c2bc9eaa50417cdf9dfb871ec"
+dependencies = [
+ "bellpepper-core",
+ "ff",
+ "neo-ajtai",
+ "neo-ccs",
+ "neo-math",
+ "neo-params",
+ "neo-reductions",
+ "neo-transcript",
+ "p3-field",
+ "p3-goldilocks",
+ "rand_chacha 0.10.0",
+ "serde",
+ "spartan2",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "neo-fold-prototype"
 version = "0.1.0"
 source = "git+https://github.com/LFDT-Nightstream/Nightstream?rev=755c1595f3b34b5c2bc9eaa50417cdf9dfb871ec#755c1595f3b34b5c2bc9eaa50417cdf9dfb871ec"
@@ -804,15 +825,20 @@ name = "neo-ivc"
 version = "0.0.1"
 dependencies = [
  "anyhow",
+ "clap",
+ "neo-ajtai",
  "neo-bridge",
  "neo-ccs",
+ "neo-fold-clean",
  "neo-fold-prototype",
  "neo-math",
  "neo-params",
  "neo-reductions",
+ "neo-transcript",
  "p3-field",
  "thiserror 1.0.69",
  "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

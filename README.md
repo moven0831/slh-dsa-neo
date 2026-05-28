@@ -1,65 +1,40 @@
-# SLH-DSA-128s + Neo folding, end-to-end benchmark
+# SLH-DSA-128s + Neo folding — exploratory PoC + Week-3 findings
 
-End-to-end prove + verify numbers for the [SLH-DSA-128s Poseidon-hash verifier](https://github.com/moven0831/slh-dsa-circuit/blob/main/circuits/poseidon_gl/bench/bench_ht_layer_gl.circom), folded across 7 XMSS layers with [Nightstream / Neo](https://github.com/LFDT-Nightstream/Nightstream) on Goldilocks, closed with Nightstream's native Spartan2-Goldilocks finisher.
+Sibling to [`moven0831/slh-dsa-128s-poseidon-bench`](https://github.com/moven0831/slh-dsa-128s-poseidon-bench) (the monolithic Spartan2 + Hyrax bench on secq256r1).
 
-Sibling to [`moven0831/slh-dsa-128s-poseidon-bench`](https://github.com/moven0831/slh-dsa-128s-poseidon-bench) (monolithic Spartan2 on secq256r1, OpenAC stack). Same SLH-DSA verifier semantics, different field and proving strategy.
+This repo was set up to deliver "end-to-end folded SLH-DSA-128s on Nightstream/Neo with real prover numbers" as a complement to the companion repo's monolithic baseline. Phase-2 smoke testing surfaced a structural issue that **changed the deliverable**: every Nightstream Goldilocks parameter preset hard-pins the witness ℓ∞ norm bound at `b = 2` (binary), so Circom-derived Goldilocks R1CS (with full-range wires) cannot be folded directly. The supported workaround (`r1cs_f_prime` frontend, with 64-bit per-wire decomposition) inflates the foldable CCS structure by ~64× the underlying R1CS — and Nightstream's own integration tests don't run this regime at production security.
 
-> **Status: work in progress.** Numbers below are placeholders until Phase 6 lands. See [`MEMO.md`](MEMO.md) for methodology and the latest state.
+**Read the full memo:** [`MEMO.md`](MEMO.md) (summary) + [`slh-dsa-circuit/research/folding/week3_findings.md`](https://github.com/moven0831/slh-dsa-circuit/blob/main/research/folding/week3_findings.md) (full write-up with code citations).
 
-## Results (M3 / 24 GB, single-thread) — TODO
+## What's here
 
-| Phase          |  Time | Peak RSS | Artifact      |  Size |
-| -------------- | ----: | -------: | ------------- | ----: |
-| Setup          | TODO  | TODO     | Proving key   | TODO  |
-| Witness        | TODO  | –        | Verifying key | TODO  |
-| Fold × 7       | TODO  | TODO     | Accumulator   | TODO  |
-| Finisher prove | TODO  | TODO     | **Proof**     | TODO  |
-| Verify         | TODO  | TODO     | –             | –     |
+| Path | Status |
+|---|---|
+| `crates/slh-poseidon-gl/` | Skeleton (Phase 1 placeholder; not implemented) |
+| `crates/neo-bridge/` | Working Circom `.r1cs` + `.wtns` parser → `neo_ccs::Mat<F>` adapter |
+| `crates/neo-ivc/src/bin/nifs_smoke.rs` | Phase-2 smoke binary. Reproduces the `b=2` rejection in <0.3 s |
+| `crates/neo-bench/` | Criterion bench placeholders (not wired up) |
+| `Cargo.toml` | Workspace with Nightstream commit `755c1595` pinned identically to `slh-dsa-circuit/tools/nightstream-spike` |
 
-For the per-layer step circuit (`ht_layer_step.circom`): **485,930 R1CS · 467,721 wires** (Goldilocks).
-
-## Run it
-
-> ⚠️ This repo depends on circuit sources from [`moven0831/slh-dsa-circuit`](https://github.com/moven0831/slh-dsa-circuit). Numbers in `MEMO.md` are pinned to commit `03e7acc`.
-
-### 1. Clone
+## Reproduce the Phase-2 smoke
 
 ```sh
 git clone https://github.com/moven0831/slh-dsa-neo.git
 cd slh-dsa-neo
+cargo build --release --bin nifs_smoke
+
+# Pre-built smoke artifacts live in slh-dsa-circuit
+cd .. && git clone https://github.com/moven0831/slh-dsa-circuit.git
+cd slh-dsa-circuit && git checkout 03e7acc
+# (assumes circuits already built per slh-dsa-circuit/CLAUDE.md)
+
+cd ../slh-dsa-neo
+./target/release/nifs_smoke \
+  --r1cs ../slh-dsa-circuit/build/poseidon_gl_bench/bench_poseidon_gl_reduce2/bench_poseidon_gl_reduce2.r1cs \
+  --wtns ../slh-dsa-circuit/build/poseidon_gl_bench/bench_poseidon_gl_reduce2/all_zeros.wtns
 ```
 
-### 2. Reproduce numbers
-
-```sh
-bash scripts/repro.sh        # compiles circuits → signs → benches → emits results/tables/*
-```
-
-### 3. Spot-check one phase
-
-```sh
-cargo bench --bench single_fold        # per-fold-step number
-cargo bench --bench ivc_chain          # 7-step IVC total
-cargo bench --bench finisher           # Spartan2-GL finisher
-cargo bench --bench end_to_end         # headline number
-cargo test --test verifier             # fresh-process verifier returns Ok
-```
-
-## Layout
-
-```
-slh-dsa-neo/
-├── crates/
-│   ├── slh-poseidon-gl/   # Rust Goldilocks Poseidon SLH-DSA signer (reference oracle)
-│   ├── neo-bridge/        # Circom .r1cs + .wtns  →  Nightstream CCS
-│   ├── neo-ivc/           # 7-step IVC orchestrator + Spartan2-GL finisher
-│   └── neo-bench/         # Criterion + RSS harness, memo-number generator
-├── circuits/              # copied from slh-dsa-circuit @ 03e7acc
-├── scripts/
-└── results/
-    ├── raw/               # Criterion JSON + RSS traces (committed)
-    └── tables/            # generated tables for MEMO.md (gitignored)
-```
+Expected: passes 4/6 stages (parse, lift, row-wise sat check, preprocess), then fails at NIFS prove with `CCS instance: ‖z‖_∞ ≥ b at index 1 (b = 2)`.
 
 ## License
 

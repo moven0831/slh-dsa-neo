@@ -12,9 +12,18 @@ neo-ccs            = { workspace = true }
 neo-math           = { workspace = true }
 neo-params         = { workspace = true }
 neo-reductions     = { workspace = true }
+neo-transcript     = { workspace = true }
+neo-ajtai          = { workspace = true }
+neo-fold-clean     = { workspace = true }
 neo-fold-prototype = { workspace = true }
 p3-field           = { workspace = true }
 neo-bridge         = { path = "../neo-bridge" }
 anyhow             = { workspace = true }
 thiserror          = { workspace = true }
 tracing            = { workspace = true }
+tracing-subscriber = { workspace = true }
+clap               = { workspace = true }
+
+[[bin]]
+name = "nifs_smoke"
+path = "src/bin/nifs_smoke.rs"

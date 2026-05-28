@@ -21,6 +21,9 @@ neo-ccs              = { git = "https://github.com/LFDT-Nightstream/Nightstream"
 neo-math             = { git = "https://github.com/LFDT-Nightstream/Nightstream", rev = "755c1595f3b34b5c2bc9eaa50417cdf9dfb871ec" }
 neo-params           = { git = "https://github.com/LFDT-Nightstream/Nightstream", rev = "755c1595f3b34b5c2bc9eaa50417cdf9dfb871ec" }
 neo-reductions       = { git = "https://github.com/LFDT-Nightstream/Nightstream", rev = "755c1595f3b34b5c2bc9eaa50417cdf9dfb871ec" }
+neo-transcript       = { git = "https://github.com/LFDT-Nightstream/Nightstream", rev = "755c1595f3b34b5c2bc9eaa50417cdf9dfb871ec" }
+neo-ajtai            = { git = "https://github.com/LFDT-Nightstream/Nightstream", rev = "755c1595f3b34b5c2bc9eaa50417cdf9dfb871ec" }
+neo-fold-clean       = { git = "https://github.com/LFDT-Nightstream/Nightstream", rev = "755c1595f3b34b5c2bc9eaa50417cdf9dfb871ec" }
 neo-fold-prototype   = { git = "https://github.com/LFDT-Nightstream/Nightstream", rev = "755c1595f3b34b5c2bc9eaa50417cdf9dfb871ec" }
 
 # Goldilocks field; lock matches Nightstream's transitive pin (Cargo.lock cross-check).

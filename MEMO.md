@@ -1,90 +1,93 @@
-# Memo: Folded SLH-DSA-128s on Neo — Real Numbers
+# Memo: Folding SLH-DSA-128s on Nightstream — Week-3 findings
 
-> **Status: work in progress.** This memo will be backfilled by `scripts/repro.sh` once Phases 1–6 land. The skeleton documents what we will measure and how; numbers below are TODO until then.
+> **Status: pivoted to findings memo.** The original goal — "end-to-end folded SLH-DSA-128s on Nightstream with competitive prover numbers" — turned out to rest on an unverified assumption about the per-fold overhead of lattice-based folding. Week-3 Phase-2 smoke uncovered the structural issue. Full write-up lives in [`slh-dsa-circuit/research/folding/week3_findings.md`](https://github.com/moven0831/slh-dsa-circuit/blob/main/research/folding/week3_findings.md).
 
 ## TL;DR
 
-TODO — one paragraph headline: prove time, peak RSS, proof size, verifier time vs the companion-repo secq256r1 monolithic Spartan2 baseline (16.18 s prove / 5.41 GB RSS / 208.8 KB proof).
+When we tried to fold a Circom-derived Goldilocks R1CS through Nightstream's `direct_ccs` frontend, the prover rejected the witness:
 
-## Setup
-
-- **Host:** M3 / 24 GB, macOS 14+, single-thread
-- **Toolchain:** Rust stable 1.88+
-- **Circom:** 2.2.3
-- **Nightstream commit:** `755c1595f3b34b5c2bc9eaa50417cdf9dfb871ec`
-- **slh-dsa-circuit commit:** `03e7acc3593ff7b7e16180e092f677904ac22d07`
-- **Step circuit:** `ht_layer_step.circom` — 485,930 R1CS, 467,721 wires (Goldilocks Poseidon, Plonky2 t=12 / 30 rounds)
-- **Fold depth:** 7 (D4: one fold per XMSS layer)
-- **Closing SNARK:** Nightstream Spartan2 over Goldilocks
-
-## Methodology
-
-Each measurement is reported as median ± stdev over **3 cold + 3 warm runs**, mirroring the protocol used by the companion repo `slh-dsa-128s-poseidon-bench`.
-
-- **Cold:** fresh process, OS file caches dropped via `sync && sudo purge` between runs
-- **Warm:** same process, three consecutive iterations after one untimed warm-up
-- **Wall-clock:** `Instant::now()` brackets in Rust
-- **Peak RSS:** sampled via `getrusage(RUSAGE_SELF)` at phase boundaries; cross-checked against `/usr/bin/time -l`
-- **Proof size:** serialized bytes via Nightstream's native `to_bytes()` (no further compression)
-
-## Numbers
-
-### Per-fold-step (HT-layer, 486K R1CS)
-
-TODO — Phase 3 output.
-
-| Phase | Time (median ± stdev) | Peak RSS | Notes |
-|---|---|---|---|
-| Witness gen (circom) | TODO | – | per-layer |
-| R1CS → CCS lift | TODO | TODO | one-shot |
-| NIFS prove | TODO | TODO | `FoldingMode::Optimized` |
-| NIFS verify | TODO | TODO | |
-
-### 7-step IVC chain
-
-TODO — Phase 4 output.
-
-| Step | Cumulative time | Per-step delta | Peak RSS | Accumulator size |
-|---|---|---|---|---|
-| z₀ → z₁ | TODO | TODO | TODO | TODO |
-| z₁ → z₂ | TODO | TODO | TODO | TODO |
-| z₂ → z₃ | TODO | TODO | TODO | TODO |
-| z₃ → z₄ | TODO | TODO | TODO | TODO |
-| z₄ → z₅ | TODO | TODO | TODO | TODO |
-| z₅ → z₆ | TODO | TODO | TODO | TODO |
-| z₆ → z₇ | TODO | TODO | TODO | TODO |
-
-### Spartan2-GL finisher
-
-TODO — Phase 5 output.
-
-| Phase | Time | Peak RSS | Artifact | Size |
-|---|---|---|---|---|
-| Setup (one-time) | TODO | TODO | Proving key | TODO |
-| Prove | TODO | TODO | **Proof** | TODO |
-| Verify (fresh process) | TODO | TODO | – | – |
-
-### Side-by-side vs companion
-
-| Path | Field | Strategy | Prove | Peak RSS | Proof | Verify |
-|---|---|---|---|---|---|---|
-| `slh-dsa-128s-poseidon-bench` (companion) | secq256r1 | Monolithic Spartan2+Hyrax (OpenAC) | 16,184 ms | 5.41 GB | 208.8 KB | 9,522 ms |
-| `slh-dsa-neo` (this) | Goldilocks | Neo 7-fold + Spartan2-GL | TODO | TODO | TODO | TODO |
-
-> **Caveat — not apples-to-apples.** The two paths verify the same SLH-DSA-128s semantics but on different fields, with different Poseidon variants in-circuit, different commitment schemes, and different closing SNARK engineering. The comparison is "two viable Poseidon-SLH-DSA approaches", not "fold beats monolith on identical config".
-
-## Open Questions
-
-- Real-witness coefficient magnitude vs lattice gadget norms — does the folding prover cost depend on witness L∞ in a measurable way at this scale?
-- Per-step prove time variance across the 7 layers (each layer's authentication path has different active bits)
-- Spartan2-GL setup cost amortization — is the proving key reusable across signatures or per-witness?
-
-## Reproduction Recipe
-
-```sh
-git clone https://github.com/moven0831/slh-dsa-neo.git
-cd slh-dsa-neo
-bash scripts/repro.sh   # ~30 min on M3, produces all numbers in this memo from scratch
+```
+Error: direct_ccs::build_instance — z does not satisfy R1CS
+Caused by: CCS instance: ‖z‖_∞ ≥ b at index 1 (b = 2)
 ```
 
-For full methodology see [`README.md`](README.md). For the planning trail see `slh-dsa-circuit/research/folding/` at commit `03e7acc`.
+Root cause: every Nightstream Goldilocks parameter preset hard-pins the witness ℓ∞ norm bound at `b = 2` (binary). Real Circom Goldilocks witnesses have full-range field elements and don't fit. The supported workaround (`r1cs_f_prime` frontend) bit-decomposes every wire to 64 bits, inflating the foldable CCS structure by ~64× the underlying R1CS row count. At SLH-DSA-128s D4 scale (486 K R1CS step), one fold step becomes a ~30.5 M-row CCS instance.
+
+That row blow-up does **not** automatically mean "folding is uncompetitive": Goldilocks field ops are ~5–20× faster than secq256r1, so the wall-clock comparison against the companion repo's 16.2 s monolithic Spartan2-secq256r1 baseline is genuinely uncertain. **Nobody has measured it** — not us, and not Nightstream's authors (whose own integration tests use a reduced-security `tiny_params` preset to fit a single fold step under a 5-minute CI cap).
+
+## What's in this repo
+
+| Path | Content |
+|---|---|
+| `crates/slh-poseidon-gl/` | Skeleton for the Goldilocks Poseidon SLH-DSA signer (Phase 1 of the original plan) |
+| `crates/neo-bridge/` | Circom `.r1cs` + `.wtns` → `neo_ccs::Mat<F>` adapter (validated at 486K-constraint scale via the slh-dsa-circuit spike) |
+| `crates/neo-ivc/src/bin/nifs_smoke.rs` | Phase-2 smoke binary. **Demonstrates the b=2 rejection on a real Circom-derived R1CS.** Compiles and runs; reproducing the failure is one command (see "Reproduce the finding" below) |
+| `crates/neo-bench/` | Criterion bench placeholders (left for whoever picks up the pivot) |
+| `Cargo.toml` | Workspace with Nightstream commit `755c1595` pinned identically to `slh-dsa-circuit/tools/nightstream-spike` |
+
+## What is and isn't verified
+
+| Check | Status | Evidence location |
+|---|---|---|
+| `b = 2` is hard-pinned in all Nightstream Goldilocks presets | ✅ | `neo-params/src/lib.rs:58–82` (`goldilocks_paper_b2::B_BASE = 2`) and `goldilocks_auto_r1cs_ccs_with` (line 236, only varies `lambda`) |
+| `r1cs_f_prime` structure shape (`m × 64 + ~5K rows`) | ✅ | `neo-fold-clean/src/frontends/r1cs_f_prime/mod.rs` + plan analysis in `r1cs_compiler.rs` tests |
+| Nightstream's own integration test uses `tiny_params` at reduced security | ✅ | `tests/system/r1cs_compiler.rs:554–632` (`tiny_params` and `make_tiny_lifecycle_plan`) |
+| Production-params `r1cs_f_prime` actually runs on a real R1CS at SLH-DSA scale | ❌ | **Not measured.** Nightstream's authors have not characterized this regime |
+| Goldilocks Spartan2 wall-clock per CCS row vs Spartan2-secq256r1 | 🟡 Analytic | ~5–20× faster from per-op estimate; not benchmarked here |
+
+## Walking back the "50× worse than monolithic" claim
+
+The first conclusion I jumped to was "folding via `r1cs_f_prime` is ~50× worse than the companion's secq256r1 monolithic baseline." That was a **row-count** statement dressed as a **wall-clock** statement. The corrected version: ~64× row blow-up from bit-decomposition, partially offset by ~5–20× Goldilocks speedup. Net wall-clock direction is genuinely unknown. See `slh-dsa-circuit/research/folding/week3_findings.md §5` for the breakdown.
+
+## Reproduce the finding
+
+```sh
+# This repo
+git clone https://github.com/moven0831/slh-dsa-neo.git
+cd slh-dsa-neo
+cargo build --release --bin nifs_smoke
+
+# Pre-built smoke artifacts live in slh-dsa-circuit (clone adjacent)
+cd ..
+git clone https://github.com/moven0831/slh-dsa-circuit.git
+cd slh-dsa-circuit
+git checkout 03e7acc
+# (assumes circuits already built — see CLAUDE.md for the bootstrap recipe)
+
+# Run the smoke
+cd ../slh-dsa-neo
+./target/release/nifs_smoke \
+  --r1cs ../slh-dsa-circuit/build/poseidon_gl_bench/bench_poseidon_gl_reduce2/bench_poseidon_gl_reduce2.r1cs \
+  --wtns ../slh-dsa-circuit/build/poseidon_gl_bench/bench_poseidon_gl_reduce2/all_zeros.wtns
+```
+
+Expected output: passes through R1CS parse + lift + row-wise satisfaction check + preprocess, then fails at NIFS prove with `CCS instance: ‖z‖_∞ ≥ b at index 1 (b = 2)`. Total wall-time <0.3 s.
+
+## Pivots from here
+
+The original Phases 3–7 are not viable as stated. The three pivots discussed in `research/folding/week3_findings.md §7`:
+
+- **A — Measure production-params `r1cs_f_prime`.** ~1 engineer-week. Settles the wall-clock question with a real number. Risk: 24 GB may not be sufficient at SLH-DSA scale.
+- **B — Monolithic Spartan2-GL bench, no folding.** ~3–5 engineer-days. Shows the Goldilocks field speedup honestly. Reuses the existing Goldilocks Poseidon port. Lowest risk; complements the companion repo well.
+- **C — Fix LatticeFold gadget-norm at verify.** ~1 engineer-day. LatticeFold's 5× decomposition factor is more favorable than Nightstream's 64×. If the fix lands, pivot A becomes feasible on LatticeFold's NIFS instead.
+
+Pivots B + C run in parallel are the safest delivery of "real folding numbers" within a bounded budget.
+
+## Methodology (carry-over for whichever pivot lands)
+
+For consistency with the companion repo `slh-dsa-128s-poseidon-bench`:
+
+- **Host:** M3 / 24 GB, macOS 14+, single-thread
+- **Reporting:** median ± stdev over 3 cold + 3 warm runs
+- **Cold:** fresh process, OS file caches dropped via `sync && sudo purge` between runs
+- **Warm:** three consecutive iterations after one untimed warm-up
+- **Wall-clock:** `Instant::now()` brackets in Rust
+- **Peak RSS:** sampled via `getrusage(RUSAGE_SELF)`; cross-checked against `/usr/bin/time -l`
+- **Proof size:** serialized bytes (no further compression)
+
+## References
+
+- Full findings: [`slh-dsa-circuit/research/folding/week3_findings.md`](https://github.com/moven0831/slh-dsa-circuit/blob/main/research/folding/week3_findings.md)
+- Companion repo (secq256r1 monolithic): [`slh-dsa-128s-poseidon-bench`](https://github.com/moven0831/slh-dsa-128s-poseidon-bench)
+- Source circuit repo (pin `03e7acc`): [`slh-dsa-circuit`](https://github.com/moven0831/slh-dsa-circuit)
+- Nightstream (pin `755c1595`): [LFDT-Nightstream/Nightstream](https://github.com/LFDT-Nightstream/Nightstream)

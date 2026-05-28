@@ -14,3 +14,6 @@ p3-field       = { workspace = true }
 anyhow         = { workspace = true }
 thiserror      = { workspace = true }
 tracing        = { workspace = true }
+
+[dev-dependencies]
+# For integration tests that read the smoke .r1cs/.wtns from slh-dsa-circuit.
