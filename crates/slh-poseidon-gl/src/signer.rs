@@ -534,6 +534,91 @@ pub fn witness_json(pk: &PublicKey, msg: &[u8; 1024], sig: &Signature) -> serde_
     })
 }
 
+// ---------------------------------------------------------------------------
+// Per-HT-layer witnesses for the folded path (bench_ht_layer_gl.circom)
+// ---------------------------------------------------------------------------
+
+/// One HT-layer step in the layout `bench_ht_layer_gl.circom` consumes:
+/// given `prev_root` (the layer's input message) plus the layer's WOTS
+/// signature and XMSS auth path, reconstruct `next_root`. This is exactly one
+/// fold step of the D4 (per-XMSS-layer) decomposition the `r1cs_f_prime`
+/// chain folds.
+#[derive(Clone, Debug)]
+pub struct HtLayerWitness {
+    pub pk_seed: [u8; N],
+    pub layer: u64,
+    pub tree_low: u64,
+    pub idx_leaf: u64,
+    pub prev_root: [u8; N],
+    pub wots_sig: [[u8; N]; LEN],
+    pub xmss_auth: [[u8; N]; HPRIME],
+    /// The circuit's output — absent from the input JSON, kept for chaining
+    /// checks (layer j's `next_root` must equal layer j+1's `prev_root`, and
+    /// the final layer's `next_root` must equal `pk_root`).
+    pub next_root: [u8; N],
+}
+
+/// Decompose a signature into the `D` per-HT-layer step witnesses, exactly as
+/// `HtVerify` walks them. Reuses the same per-layer reconstruction as
+/// `verify`, so each `next_root` is what `bench_ht_layer_gl.circom` outputs.
+pub fn ht_layer_witnesses(pk: &PublicKey, msg: &[u8; 1024], sig: &Signature) -> Vec<HtLayerWitness> {
+    let digest = slh_hmsg(&sig.r, &pk.pk_seed, &pk.pk_root, msg);
+    let (md_indices, idx_tree, idx_leaf) = parse_digest(&digest);
+    let fors_pk = fors_pk_from_sig(&pk.pk_seed, idx_tree, idx_leaf, &md_indices, &sig.sig_fors);
+
+    let mut out = Vec::with_capacity(D);
+    let mut layer_msg = fors_pk;
+    for j in 0..D {
+        let (tree_low, leaf) = if j == 0 {
+            (idx_tree, idx_leaf)
+        } else {
+            (idx_tree >> (HPRIME * j), (idx_tree >> (HPRIME * (j - 1))) & 0x1ff)
+        };
+        let chunks = base2b_with_csum(&layer_msg);
+        let wots_pk =
+            wots_pk_from_sig(&pk.pk_seed, j as u64, tree_low, leaf, &chunks, &sig.sig_ht[j][..LEN]);
+        let next_root = xmss_root_from_sig(
+            &pk.pk_seed, j as u64, tree_low, leaf, &wots_pk, &sig.sig_ht[j][LEN..],
+        );
+
+        let mut wots_sig = [[0u8; N]; LEN];
+        wots_sig.copy_from_slice(&sig.sig_ht[j][..LEN]);
+        let mut xmss_auth = [[0u8; N]; HPRIME];
+        xmss_auth.copy_from_slice(&sig.sig_ht[j][LEN..]);
+
+        out.push(HtLayerWitness {
+            pk_seed: pk.pk_seed,
+            layer: j as u64,
+            tree_low,
+            idx_leaf: leaf,
+            prev_root: layer_msg,
+            wots_sig,
+            xmss_auth,
+            next_root,
+        });
+        layer_msg = next_root;
+    }
+    out
+}
+
+/// Build the `bench_ht_layer_gl.circom` witness-input JSON for one layer
+/// (`next_root` is the circuit output, so it is intentionally absent). The
+/// scalar fields are emitted as decimal **strings**: `tree_low` can reach
+/// 2^54, past JS `Number.MAX_SAFE_INTEGER` (2^53), so a JSON number would lose
+/// precision in the circom WASM witness calculator's `JSON.parse`.
+pub fn ht_layer_witness_json(w: &HtLayerWitness) -> serde_json::Value {
+    let nest = |rows: &[[u8; N]]| -> Vec<Vec<u8>> { rows.iter().map(|n| n.to_vec()).collect() };
+    serde_json::json!({
+        "pk_seed": w.pk_seed.to_vec(),
+        "layer": w.layer.to_string(),
+        "tree_low": w.tree_low.to_string(),
+        "idx_leaf": w.idx_leaf.to_string(),
+        "prev_root": w.prev_root.to_vec(),
+        "wots_sig": nest(&w.wots_sig),
+        "xmss_auth": nest(&w.xmss_auth),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -600,5 +685,23 @@ mod tests {
         assert_eq!(v["sig_fors"][0].as_array().unwrap().len(), 13);
         assert_eq!(v["sig_ht"].as_array().unwrap().len(), 7);
         assert_eq!(v["sig_ht"][0].as_array().unwrap().len(), 44);
+    }
+
+    #[test]
+    fn ht_layer_witnesses_chain_to_pk_root() {
+        let (sk_seed, pk_seed) = seeds();
+        let sk = keygen(sk_seed, pk_seed);
+        let sig = sign(&sk, &msg(), [42u8; N]);
+        let layers = ht_layer_witnesses(&sk.public_key(), &msg(), &sig);
+        assert_eq!(layers.len(), D);
+        // Each layer's next_root feeds the next layer's prev_root.
+        for j in 1..D {
+            assert_eq!(layers[j].prev_root, layers[j - 1].next_root, "layer {j} prev_root != prev next_root");
+        }
+        // The top layer reconstructs pk_root — the same check HtVerify asserts.
+        assert_eq!(layers[D - 1].next_root, sk.pk_root, "top layer next_root != pk_root");
+        // Layer 0's prev_root is the FORS pubkey, distinct from the input msg.
+        assert_eq!(layers[0].layer, 0);
+        assert_eq!(layers[D - 1].layer, (D - 1) as u64);
     }
 }

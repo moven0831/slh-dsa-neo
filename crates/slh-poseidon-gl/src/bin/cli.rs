@@ -18,7 +18,9 @@ use std::time::Instant;
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 
-use slh_poseidon_gl::{keygen, sign, verify, witness_json};
+use slh_poseidon_gl::{
+    ht_layer_witness_json, ht_layer_witnesses, keygen, sign, verify, witness_json,
+};
 
 #[derive(Parser)]
 #[command(name = "slh-poseidon-gl", about = "Goldilocks Poseidon SLH-DSA-128s signer")]
@@ -40,6 +42,15 @@ enum Cmd {
         seed: u64,
         #[arg(long, default_value = "input.json")]
         out: PathBuf,
+    },
+    /// Sign and emit the D=7 per-HT-layer witness JSONs (layer_0.json ..
+    /// layer_6.json) in the bench_ht_layer_gl.circom layout, for the folded
+    /// r1cs_f_prime chain. Asserts the layers chain to pk_root.
+    EmitLayers {
+        #[arg(long, default_value_t = 0)]
+        seed: u64,
+        #[arg(long, default_value = "layers")]
+        out_dir: PathBuf,
     },
 }
 
@@ -108,6 +119,43 @@ fn main() -> Result<()> {
             std::fs::write(&out, serde_json::to_vec(&v)?)
                 .with_context(|| format!("writing {}", out.display()))?;
             println!("wrote {} (sign {elapsed:.2}s, self-verified ✓)", out.display());
+            println!("pk_root = {}", hex(&sk.pk_root));
+        }
+        Cmd::EmitLayers { seed, out_dir } => {
+            let (sk_seed, pk_seed, r, msg) = derive_inputs(seed);
+            let t = Instant::now();
+            let sk = keygen(sk_seed, pk_seed);
+            let sig = sign(&sk, &msg, r);
+            let pk = sk.public_key();
+            if !verify(&pk, &msg, &sig) {
+                anyhow::bail!("internal error: signature does not self-verify");
+            }
+            let layers = ht_layer_witnesses(&pk, &msg, &sig);
+            let elapsed = t.elapsed().as_secs_f64();
+
+            // Chain invariant: each layer's next_root feeds the next, and the
+            // top layer reconstructs pk_root (the same check HtVerify asserts).
+            for j in 1..layers.len() {
+                if layers[j].prev_root != layers[j - 1].next_root {
+                    anyhow::bail!("layer {j} prev_root != layer {} next_root", j - 1);
+                }
+            }
+            if layers.last().map(|w| w.next_root) != Some(sk.pk_root) {
+                anyhow::bail!("top layer next_root != pk_root");
+            }
+
+            std::fs::create_dir_all(&out_dir)
+                .with_context(|| format!("creating {}", out_dir.display()))?;
+            for (j, w) in layers.iter().enumerate() {
+                let path = out_dir.join(format!("layer_{j}.json"));
+                std::fs::write(&path, serde_json::to_vec(&ht_layer_witness_json(w))?)
+                    .with_context(|| format!("writing {}", path.display()))?;
+            }
+            println!(
+                "wrote {} layer witnesses to {} (sign {elapsed:.2}s, chains to pk_root ✓)",
+                layers.len(),
+                out_dir.display()
+            );
             println!("pk_root = {}", hex(&sk.pk_root));
         }
     }

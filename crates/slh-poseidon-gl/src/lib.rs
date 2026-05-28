@@ -10,4 +10,7 @@ pub mod poseidon;
 pub mod primitives;
 pub mod signer;
 
-pub use signer::{keygen, sign, verify, witness_json, PublicKey, SecretKey, Signature};
+pub use signer::{
+    ht_layer_witness_json, ht_layer_witnesses, keygen, sign, verify, witness_json, HtLayerWitness,
+    PublicKey, SecretKey, Signature,
+};
