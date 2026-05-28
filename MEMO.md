@@ -109,8 +109,9 @@ Caveats:
 | `b = 2` is hard-pinned in all Nightstream Goldilocks presets | ✅ | `neo-params/src/lib.rs:58–82` |
 | `r1cs_f_prime` structure shape `m × 64 + 1` | ✅ | Verified: HT-layer measured `limbs = 29,934,145` matches `467,721 × 64 + 1` exactly |
 | Production-params `r1cs_f_prime` runs on Circom Goldilocks R1CS | ✅ | Measured `rfp_smoke` on smoke + HT-layer |
-| Full 7-step IVC chain at production with proper `c_data_entries = κ × D = 972` | ❌ | Per-step extrapolation only |
-| Spartan2-GL finisher closes the chain into a small proof | ❌ | Not measured |
+| **Real SLH-DSA signature layer folds + verifies** (1 HT-layer step) | ✅ | `emit-layers` → `layer_0.wtns` → `rfp_smoke_full --n-steps 1`: R1CS-sat ✓, preprocess 90.6 s, prove+finish 139.2 s, verify_uncompressed 28.9 s — **PASS**. All 7 layers chain to `pk_root` in the per-layer circuit. |
+| Full 7-step IVC chain at production with proper `c_data_entries = κ × D = 972` | ❌ | Per-step extrapolation only (smoke multi-step c=972 measured; real per-layer 7-step pending) |
+| Spartan2-GL finisher closes the chain into a small proof | ❌ | Not measured — `Decider(Unsupported)` at Nightstream 755c1595 |
 
 ## How to reproduce
 
@@ -254,15 +255,20 @@ the HT-layer run.
   and the now-real three-row table. ✓ (Row 2 prove/verify measured; the
   `inputize` adapter bug was found and fixed here.)
 
+- T1.1.d `emit-layers` — per-XMSS-layer witness JSONs in the
+  `bench_ht_layer_gl.circom` layout. ✓ All 7 layers validated against the
+  per-layer circuit (chain to `pk_root`) and layer 0 folded + verified
+  through `r1cs_f_prime`.
+
 **Still open:**
 
-- T1.1.d (remainder) — `emit-layers`: per-XMSS-layer witness JSONs in the
-  `bench_ht_layer_gl.circom` layout, to replace the all-zeros `.wtns` the
-  folded `rfp_smoke` path consumes. The signer already builds every XMSS
-  layer internally; this is a serialization sub-command, not new crypto.
-- Multi-step folded chain on the **real** per-layer witnesses (feeds Row 3),
-  once `emit-layers` lands. Today's Row 3 numbers are still all-zeros-witness
-  + extrapolation.
+- Full 7-step folded chain on the **real** per-layer witnesses (one `.wtns`
+  per layer) at `c_data_entries = 972`, to replace the per-step extrapolation
+  in Row 3's full-chain total. `rfp_smoke_full` currently appends a single
+  `.wtns` N times; this needs a small multi-witness flag (the 7 real `.wtns`
+  already exist via `emit-layers` + the circom WASM calculator). Per-step cost
+  is already measured real (139 s/step), so this is plumbing + a ~13-min run,
+  no new research risk.
 - Track 1.4-bis — true Spartan2-GL closing SNARK on `r1cs_f_prime`
   (`Decider(Unsupported)` at Nightstream 755c1595; needs custom plumbing
   through `build_decider_statement` + the standalone Spartan2-GL adapter
