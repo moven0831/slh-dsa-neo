@@ -1493,6 +1493,7 @@ dependencies = [
  "anyhow",
  "clap",
  "p3-field",
+ "rayon",
  "serde",
  "serde_json",
  "thiserror 1.0.69",
