@@ -27,3 +27,7 @@ clap               = { workspace = true }
 [[bin]]
 name = "nifs_smoke"
 path = "src/bin/nifs_smoke.rs"
+
+[[bin]]
+name = "rfp_smoke"
+path = "src/bin/rfp_smoke.rs"

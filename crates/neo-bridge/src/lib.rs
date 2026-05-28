@@ -14,6 +14,7 @@ pub mod parser;
 
 use anyhow::{Result, bail};
 use neo_ccs::matrix::Mat;
+use neo_ccs::sparse::{CcsMatrix, CscMat};
 use neo_math::F;
 use p3_field::PrimeCharacteristicRing;
 
@@ -47,6 +48,42 @@ pub fn circom_to_neo_mats(circom: &CircomR1cs) -> Result<(Mat<F>, Mat<F>, Mat<F>
     };
 
     Ok((mat_from(&circom.a)?, mat_from(&circom.b)?, mat_from(&circom.c)?, m_in))
+}
+
+/// Same as [`circom_to_neo_mats`] but returns sparse `CcsMatrix<F>` triplets.
+/// Required for circuits beyond ~10K wires where dense `Mat<F>` would OOM.
+/// Adapted from `nightstream-spike::build_ccs_sparse`.
+pub fn circom_to_neo_sparse_mats(
+    circom: &CircomR1cs,
+) -> Result<(CcsMatrix<F>, CcsMatrix<F>, CcsMatrix<F>, usize, usize, usize)> {
+    if circom.field_size_bytes != 8 {
+        bail!(
+            "expected Goldilocks-sized field (8 bytes), got {}",
+            circom.field_size_bytes
+        );
+    }
+    let n_cols = circom.n_wires as usize;
+    let m_rows = circom.n_constraints as usize;
+    let m_in = 1 + circom.n_pub_out as usize + circom.n_pub_in as usize;
+
+    let mat_from = |rows: &[Vec<(u32, Vec<u8>)>]| -> Result<CcsMatrix<F>> {
+        let mut triplets: Vec<(usize, usize, F)> = Vec::new();
+        for (i, row) in rows.iter().enumerate() {
+            for (wire_idx, coeff_bytes) in row {
+                triplets.push((i, *wire_idx as usize, coeff_to_f(coeff_bytes)?));
+            }
+        }
+        Ok(CcsMatrix::Csc(CscMat::from_triplets(triplets, m_rows, n_cols)))
+    };
+
+    Ok((
+        mat_from(&circom.a)?,
+        mat_from(&circom.b)?,
+        mat_from(&circom.c)?,
+        m_rows,
+        n_cols,
+        m_in,
+    ))
 }
 
 pub fn circom_witness_to_f(wtns: &CircomWitness) -> Result<Vec<F>> {

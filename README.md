@@ -1,40 +1,58 @@
-# SLH-DSA-128s + Neo folding — exploratory PoC + Week-3 findings
+# SLH-DSA-128s + Neo folding — Pivot A: production-params measurements
 
 Sibling to [`moven0831/slh-dsa-128s-poseidon-bench`](https://github.com/moven0831/slh-dsa-128s-poseidon-bench) (the monolithic Spartan2 + Hyrax bench on secq256r1).
 
-This repo was set up to deliver "end-to-end folded SLH-DSA-128s on Nightstream/Neo with real prover numbers" as a complement to the companion repo's monolithic baseline. Phase-2 smoke testing surfaced a structural issue that **changed the deliverable**: every Nightstream Goldilocks parameter preset hard-pins the witness ℓ∞ norm bound at `b = 2` (binary), so Circom-derived Goldilocks R1CS (with full-range wires) cannot be folded directly. The supported workaround (`r1cs_f_prime` frontend, with 64-bit per-wire decomposition) inflates the foldable CCS structure by ~64× the underlying R1CS — and Nightstream's own integration tests don't run this regime at production security.
+Goal: measure end-to-end folded SLH-DSA-128s verification via [Nightstream](https://github.com/LFDT-Nightstream/Nightstream) / Neo on Goldilocks, and compare to the companion repo's monolithic baseline.
 
-**Read the full memo:** [`MEMO.md`](MEMO.md) (summary) + [`slh-dsa-circuit/research/folding/week3_findings.md`](https://github.com/moven0831/slh-dsa-circuit/blob/main/research/folding/week3_findings.md) (full write-up with code citations).
+## Headline (M3 / 24 GB, single-thread)
+
+Production-params `r1cs_f_prime` on the D4 step circuit (486 K R1CS / 467 K wires → 30 M-row F' structure):
+
+| Phase | Time | Peak RSS |
+|---|---:|---:|
+| Preprocess (Ajtai setup) | 86.7 s | – |
+| **Prove + finish** | **116.6 s** | – |
+| **Verify (uncompressed)** | **19.8 s** | – |
+| **Total (one step)** | **227 s** | **10.46 GB** |
+
+Full 7-step D4 chain extrapolated: **~815 s prove vs companion's 16.2 s monolithic — ~50× slower in prover wall-clock** (~32× slower when verify is included on both sides). Full write-up + per-stage breakdown in [`MEMO.md`](MEMO.md) and the [research memo](https://github.com/moven0831/slh-dsa-circuit/blob/main/research/folding/week3_findings.md).
 
 ## What's here
 
 | Path | Status |
 |---|---|
-| `crates/slh-poseidon-gl/` | Skeleton (Phase 1 placeholder; not implemented) |
-| `crates/neo-bridge/` | Working Circom `.r1cs` + `.wtns` parser → `neo_ccs::Mat<F>` adapter |
-| `crates/neo-ivc/src/bin/nifs_smoke.rs` | Phase-2 smoke binary. Reproduces the `b=2` rejection in <0.3 s |
-| `crates/neo-bench/` | Criterion bench placeholders (not wired up) |
+| `crates/neo-ivc/src/bin/rfp_smoke.rs` | **Pivot A binary.** Runs `r1cs_f_prime` end-to-end at production params. Supports `--sparse` for HT-layer scale. |
+| `crates/neo-ivc/src/bin/nifs_smoke.rs` | Phase-2 binary. Demonstrates the `b = 2` rejection from `direct_ccs::build_instance` in <0.3 s. |
+| `crates/neo-bridge/` | Working Circom `.r1cs` + `.wtns` parser; dense + sparse lift to `neo_ccs` matrices |
+| `crates/slh-poseidon-gl/` | Skeleton (not implemented) |
+| `crates/neo-bench/` | Criterion bench placeholders (not wired) |
 | `Cargo.toml` | Workspace with Nightstream commit `755c1595` pinned identically to `slh-dsa-circuit/tools/nightstream-spike` |
 
-## Reproduce the Phase-2 smoke
+## Reproduce in 5 minutes
 
 ```sh
 git clone https://github.com/moven0831/slh-dsa-neo.git
 cd slh-dsa-neo
-cargo build --release --bin nifs_smoke
+cargo build --release --bin rfp_smoke
 
-# Pre-built smoke artifacts live in slh-dsa-circuit
+# Pre-built circuit artifacts live in slh-dsa-circuit
 cd .. && git clone https://github.com/moven0831/slh-dsa-circuit.git
 cd slh-dsa-circuit && git checkout 03e7acc
-# (assumes circuits already built per slh-dsa-circuit/CLAUDE.md)
 
 cd ../slh-dsa-neo
-./target/release/nifs_smoke \
+
+# Smoke (5 s) — production params on 440 R1CS
+./target/release/rfp_smoke \
   --r1cs ../slh-dsa-circuit/build/poseidon_gl_bench/bench_poseidon_gl_reduce2/bench_poseidon_gl_reduce2.r1cs \
   --wtns ../slh-dsa-circuit/build/poseidon_gl_bench/bench_poseidon_gl_reduce2/all_zeros.wtns
+
+# HT-layer D4 step (227 s) — production params on 486 K R1CS
+./target/release/rfp_smoke --sparse \
+  --r1cs ../slh-dsa-circuit/build/poseidon_gl_bench/bench_ht_layer_gl/bench_ht_layer_gl.r1cs \
+  --wtns ../slh-dsa-circuit/build/poseidon_gl_bench/bench_ht_layer_gl/all_zeros.wtns
 ```
 
-Expected: passes 4/6 stages (parse, lift, row-wise sat check, preprocess), then fails at NIFS prove with `CCS instance: ‖z‖_∞ ≥ b at index 1 (b = 2)`.
+Expected output: both runs end with `RESULT: PASS — r1cs_f_prime prove + finish + verify all succeed.`
 
 ## License
 
