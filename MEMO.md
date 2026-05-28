@@ -23,8 +23,37 @@ Extrapolated full D4 chain (7 folds): **~815 s prove**, vs the companion repo's 
 | `crates/neo-ivc/src/bin/rfp_smoke.rs` | **Pivot A binary.** Runs `r1cs_f_prime` end-to-end (preprocess → chain.append → finish → verify_uncompressed) on a Circom Goldilocks R1CS. Supports `--sparse` for circuits beyond ~10K wires. 5 s on smoke, 227 s on HT-layer. |
 | `crates/neo-ivc/src/{step,chain,finisher}.rs` | **Library API** (Session 2026-05-28). `step::build_plan` + `step::preprocess_sparse` extract the rfp_smoke plan-construction. `chain::run_chain` appends multiple witnesses against one preprocessing then finishes. `finisher::close_chain` uses the audit-mode `compress` path to produce a `Compressed` proof + verifier. Builds clean; multi-step run not yet measured. |
 | `crates/neo-bridge/` | Circom `.r1cs` + `.wtns` parser + dense and sparse lift to `neo_ccs` matrices |
-| `crates/slh-poseidon-gl/` | **Permutation + F/H/T_k/T_len implemented** (Session 2026-05-28). Plonky2 Poseidon t=12 byte-matches 4 Plonky2 reference vectors. SlhF/SlhH/SlhTk byte-match Circom witnesses from `slh-dsa-circuit/build/poseidon_gl_bench/`. SlhTlen structurally validated (no Circom witness exists yet). H_msg and full SLH-DSA-128s signer still stubbed. |
+| `crates/slh-poseidon-gl/` | **Full SLH-DSA-128s signer + verifier** (Session 2026-05-28). Plonky2 Poseidon t=12 byte-matches 4 reference vectors; F/H/T_k/T_len/H_msg byte-match Circom bench witnesses. `signer.rs` ports the FIPS 205 control flow (keygen/WOTS+/FORS/XMSS/HT) from `poseidon_sign.mjs` onto the Goldilocks primitives; `verify()` mirrors the circuit. **Validated end-to-end**: `cli emit-monolithic` → the real `main_poseidon_gl.circom` WASM witness generator returns `valid == 1` (and a tampered input fails the `xmss_root === pk_root` asserts). Leaf loops parallelized with rayon; sign ≈ 6 s on M3. |
 | `crates/neo-bench/` | Criterion bench placeholders (not wired) |
+
+## Real-witness monolithic baseline (Row 2) — Session 2026-05-28
+
+The signer now produces a **real** witness for the monolithic Goldilocks
+verifier, so the companion repo's Row 2 (Goldilocks + Hash-MLE PCS) is
+measured end-to-end instead of setup-only. M3 / 24 GB, real witness
+(`valid == 1`):
+
+| Phase | Time | Peak RSS | Artifact | Size |
+|---|---:|---:|---|---:|
+| Witness (circom WASM) | 3.08 s | 264 MB | proof | **575,198 B (562 KiB)** |
+| Setup | 17.6 s | 4.47 GB | pk | 571 MB |
+| Prove | 6.18 s | 4.47 GB | vk | 571 MB |
+| Verify | 0.27 s | – | R1CS | 446 MB |
+
+vs Row 1 (secq256r1 + Hyrax) at the same scale: prove **~2.6× faster**,
+verify **~35× faster**, proof **~2.75× larger**. **This gap is field *and*
+PCS** (secq256r1+Hyrax → Goldilocks+Hash-MLE), not pure field — the verify
+speedup and larger proof are mostly the PCS swap. Timings carry ±25%
+run-to-run variance on the loaded 24 GB box; artifact sizes are deterministic.
+
+**Latent bug found + fixed in the Track 2.2 adapter.** The setup-only path
+never exercised prove/verify, hiding a bug: `Circom2SpartanCircuit::public_values()`
+declared one public output (the circuit's `valid` wire) but `synthesize` never
+`inputize()`d it. Prove succeeded but verify returned `InvalidSumcheckProof`
+(prover transcript vs verifier public-IO sum-check disagreed). Fix: `inputize`
+each `wires[1..=n_pub_out]` in `synthesize`, matching the `CubicCircuit`
+example in spartan2. Verify passes after the fix. The `w0_is_one` constant-wire
+pinning is independently sound (w0 is aux, constrained `= 1`).
 
 ## Measured numbers
 
@@ -214,20 +243,30 @@ On the HT-layer (m=467K, limbs=30M) the underlying-row cost (3.9 µs/row ×
 land closer to 130–140 s/step than 22× × 116.6 s. Open question pending
 the HT-layer run.
 
-**Open from the plan:**
+**Done since the last memo:**
 
-- T1.1.c — full SLH-DSA-128s signer (sign/verify control flow + SlhHMsg).
-  Largest remaining item; the per-primitive Poseidon machinery to call is
-  done.
-- T1.1.d — signer CLI emitting per-XMSS-layer and monolithic witnesses.
-- T1.5 — `rfp_smoke_full` end-to-end binary. Possible to ship a "multi-N
-  same-witness" version using existing `all_zeros.wtns` × N before the real
-  signer lands, to capture per-step prove-cost growth at `c_data_entries=972`.
-- T2.1 — `main_poseidon_gl.circom` monolithic main circuit. Blocked on
-  `SlhHMsg` template not existing in `hashes_gl.circom`.
-- T2.2 — `slh-dsa-spartan2-gl` bench crate in the companion repo (uses
-  validated `R1CSSNARK<GoldilocksP3MerkleMleEngine>` standalone API).
-- T2.3 — three-row results table.
+- T1.1.c — full SLH-DSA-128s signer + verifier (`signer.rs`), validated
+  end-to-end against `main_poseidon_gl.circom` (`valid == 1`). ✓
+- T1.1.d — signer CLI (`emit-monolithic`, `self-check`). ✓ (emits the
+  monolithic witness; per-XMSS-layer emission for the folded path is the one
+  remaining CLI sub-feature — see below.)
+- T2.1/T2.2/T2.3 — monolithic Goldilocks circuit, Spartan2-GL bench crate,
+  and the now-real three-row table. ✓ (Row 2 prove/verify measured; the
+  `inputize` adapter bug was found and fixed here.)
+
+**Still open:**
+
+- T1.1.d (remainder) — `emit-layers`: per-XMSS-layer witness JSONs in the
+  `bench_ht_layer_gl.circom` layout, to replace the all-zeros `.wtns` the
+  folded `rfp_smoke` path consumes. The signer already builds every XMSS
+  layer internally; this is a serialization sub-command, not new crypto.
+- Multi-step folded chain on the **real** per-layer witnesses (feeds Row 3),
+  once `emit-layers` lands. Today's Row 3 numbers are still all-zeros-witness
+  + extrapolation.
+- Track 1.4-bis — true Spartan2-GL closing SNARK on `r1cs_f_prime`
+  (`Decider(Unsupported)` at Nightstream 755c1595; needs custom plumbing
+  through `build_decider_statement` + the standalone Spartan2-GL adapter
+  Track 2.2 already built).
 
 ## Methodology
 
