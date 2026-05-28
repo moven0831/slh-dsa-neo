@@ -1,0 +1,35 @@
+[package]
+name = "neo-bench"
+description = "Criterion + RSS bench harness; produces results/raw/* and results/tables/* for MEMO.md."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+neo-ivc       = { path = "../neo-ivc" }
+neo-bridge    = { path = "../neo-bridge" }
+slh-poseidon-gl = { path = "../slh-poseidon-gl" }
+anyhow        = { workspace = true }
+tracing       = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+[dev-dependencies]
+criterion     = { workspace = true }
+
+[[bench]]
+name = "single_fold"
+harness = false
+
+[[bench]]
+name = "ivc_chain"
+harness = false
+
+[[bench]]
+name = "finisher"
+harness = false
+
+[[bench]]
+name = "end_to_end"
+harness = false

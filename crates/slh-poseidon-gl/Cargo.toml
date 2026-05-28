@@ -1,0 +1,26 @@
+[package]
+name = "slh-poseidon-gl"
+description = "Rust reference signer for SLH-DSA-128s with Goldilocks Poseidon (Plonky2 t=12, 30 rounds)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+p3-field        = { workspace = true }
+anyhow          = { workspace = true }
+thiserror       = { workspace = true }
+serde           = { workspace = true }
+serde_json      = { workspace = true }
+tracing         = { workspace = true }
+clap            = { workspace = true, optional = true }
+
+[features]
+default = []
+cli     = ["dep:clap"]
+
+[[bin]]
+name = "slh-poseidon-gl"
+path = "src/bin/cli.rs"
+required-features = ["cli"]

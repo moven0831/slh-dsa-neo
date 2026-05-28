@@ -1,0 +1,20 @@
+[package]
+name = "neo-ivc"
+description = "7-step IVC orchestrator + Spartan2-Goldilocks finisher for folded SLH-DSA-128s verification."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+neo-ccs            = { workspace = true }
+neo-math           = { workspace = true }
+neo-params         = { workspace = true }
+neo-reductions     = { workspace = true }
+neo-fold-prototype = { workspace = true }
+p3-field           = { workspace = true }
+neo-bridge         = { path = "../neo-bridge" }
+anyhow             = { workspace = true }
+thiserror          = { workspace = true }
+tracing            = { workspace = true }
