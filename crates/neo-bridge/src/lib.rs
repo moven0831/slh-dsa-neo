@@ -12,13 +12,13 @@
 
 pub mod parser;
 
-use anyhow::{Result, bail};
+use anyhow::{bail, Result};
 use neo_ccs::matrix::Mat;
 use neo_ccs::sparse::{CcsMatrix, CscMat};
 use neo_math::F;
 use p3_field::PrimeCharacteristicRing;
 
-pub use parser::{CircomR1cs, CircomWitness, parse_circom_r1cs, parse_circom_wtns};
+pub use parser::{parse_circom_r1cs, parse_circom_wtns, CircomR1cs, CircomWitness};
 
 /// Convert a parsed Circom Goldilocks R1CS into a dense `(A, B, C, m_in)` tuple
 /// ready to feed `neo_fold_clean::frontends::direct_ccs::R1cs`.
@@ -47,7 +47,12 @@ pub fn circom_to_neo_mats(circom: &CircomR1cs) -> Result<(Mat<F>, Mat<F>, Mat<F>
         Ok(Mat::<F>::from_row_major(m_rows, n_cols, data))
     };
 
-    Ok((mat_from(&circom.a)?, mat_from(&circom.b)?, mat_from(&circom.c)?, m_in))
+    Ok((
+        mat_from(&circom.a)?,
+        mat_from(&circom.b)?,
+        mat_from(&circom.c)?,
+        m_in,
+    ))
 }
 
 /// Same as [`circom_to_neo_mats`] but returns sparse `CcsMatrix<F>` triplets.
@@ -55,7 +60,14 @@ pub fn circom_to_neo_mats(circom: &CircomR1cs) -> Result<(Mat<F>, Mat<F>, Mat<F>
 /// Adapted from `nightstream-spike::build_ccs_sparse`.
 pub fn circom_to_neo_sparse_mats(
     circom: &CircomR1cs,
-) -> Result<(CcsMatrix<F>, CcsMatrix<F>, CcsMatrix<F>, usize, usize, usize)> {
+) -> Result<(
+    CcsMatrix<F>,
+    CcsMatrix<F>,
+    CcsMatrix<F>,
+    usize,
+    usize,
+    usize,
+)> {
     if circom.field_size_bytes != 8 {
         bail!(
             "expected Goldilocks-sized field (8 bytes), got {}",
@@ -73,7 +85,9 @@ pub fn circom_to_neo_sparse_mats(
                 triplets.push((i, *wire_idx as usize, coeff_to_f(coeff_bytes)?));
             }
         }
-        Ok(CcsMatrix::Csc(CscMat::from_triplets(triplets, m_rows, n_cols)))
+        Ok(CcsMatrix::Csc(CscMat::from_triplets(
+            triplets, m_rows, n_cols,
+        )))
     };
 
     Ok((
@@ -88,7 +102,10 @@ pub fn circom_to_neo_sparse_mats(
 
 pub fn circom_witness_to_f(wtns: &CircomWitness) -> Result<Vec<F>> {
     if wtns.field_size_bytes != 8 {
-        bail!("expected Goldilocks-sized witness, got {}", wtns.field_size_bytes);
+        bail!(
+            "expected Goldilocks-sized witness, got {}",
+            wtns.field_size_bytes
+        );
     }
     wtns.wires_le_bytes.iter().map(|w| coeff_to_f(w)).collect()
 }

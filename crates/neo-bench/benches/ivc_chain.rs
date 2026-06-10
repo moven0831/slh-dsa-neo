@@ -1,4 +1,4 @@
-use criterion::{Criterion, criterion_group, criterion_main};
+use criterion::{criterion_group, criterion_main, Criterion};
 
 fn ivc_chain(c: &mut Criterion) {
     // TODO: Phase 4 — bench 7-step IVC chain.

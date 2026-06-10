@@ -24,16 +24,20 @@ use std::time::Instant;
 
 use neo_fold_clean::engine::ccs_native::poseidon2::POSEIDON2_GOLDILOCKS_BITS;
 use neo_fold_clean::frontends::direct_ccs::R1cs;
-use neo_fold_clean::frontends::f_prime::image::{FPrimeImageLayout, NifsCeClaimShape, NifsPayloadShape};
+use neo_fold_clean::frontends::f_prime::image::{
+    FPrimeImageLayout, NifsCeClaimShape, NifsPayloadShape,
+};
 use neo_fold_clean::frontends::f_prime::recursive_plan::{
-    AccumulatorPlanOptions, RecursiveStepImagePlan, StateXOutPlanOptions, build_recursive_step_image_config,
+    build_recursive_step_image_config, AccumulatorPlanOptions, RecursiveStepImagePlan,
+    StateXOutPlanOptions,
 };
 use neo_fold_clean::frontends::r1cs_f_prime::{self, R1csChainBuilder, SparseR1cs};
 use neo_fold_clean::paper::f_prime::ring_action_trace::{LowNormEncoding, RingActionTraceLayout};
 use neo_fold_clean::verify_uncompressed;
 
 use neo_bridge::{
-    circom_to_neo_mats, circom_to_neo_sparse_mats, circom_witness_to_f, parse_circom_r1cs, parse_circom_wtns,
+    circom_to_neo_mats, circom_to_neo_sparse_mats, circom_witness_to_f, parse_circom_r1cs,
+    parse_circom_wtns,
 };
 
 /// Mirror `BOUNDARY_BITS` from the Nightstream test (4 × 64 = 256).
@@ -147,7 +151,11 @@ fn main() -> Result<()> {
 
     println!(
         "=== 2/7 Lift to neo_ccs {} + build R1cs shape ===",
-        if args.sparse { "CcsMatrix (sparse CSC)" } else { "Mat<F> (dense)" }
+        if args.sparse {
+            "CcsMatrix (sparse CSC)"
+        } else {
+            "Mat<F> (dense)"
+        }
     );
     let t = Instant::now();
     let z = circom_witness_to_f(&circom_wtns)?;
@@ -172,7 +180,10 @@ fn main() -> Result<()> {
 
         let m_used = r1cs.m;
         let m_in_used = r1cs.m_in;
-        println!("=== 4/7 Build RecursiveStepImagePlan (m_in={}, m={}) ===", m_in_used, m_used);
+        println!(
+            "=== 4/7 Build RecursiveStepImagePlan (m_in={}, m={}) ===",
+            m_in_used, m_used
+        );
         let t = Instant::now();
         let plan = make_small_plan(m_used, m_in_used);
         println!(
@@ -208,7 +219,10 @@ fn main() -> Result<()> {
 
         let m_used = r1cs.m();
         let m_in_used = m_in;
-        println!("=== 4/7 Build RecursiveStepImagePlan (m_in={}, m={}) ===", m_in_used, m_used);
+        println!(
+            "=== 4/7 Build RecursiveStepImagePlan (m_in={}, m={}) ===",
+            m_in_used, m_used
+        );
         let t = Instant::now();
         let plan = make_small_plan(m_used, m_in_used);
         println!(
@@ -232,7 +246,6 @@ fn run_chain(
     z: Vec<neo_math::F>,
     t_total: Instant,
 ) -> Result<()> {
-
     println!("=== 6/7 R1csChainBuilder: append_assignment → finish ===");
     let t = Instant::now();
     let mut chain = R1csChainBuilder::new(&prep)

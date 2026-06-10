@@ -1,4 +1,4 @@
-use criterion::{Criterion, criterion_group, criterion_main};
+use criterion::{criterion_group, criterion_main, Criterion};
 
 fn single_fold(c: &mut Criterion) {
     // TODO: Phase 3 — bench one HT-layer fold step (486K R1CS).

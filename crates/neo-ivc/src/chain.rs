@@ -24,8 +24,8 @@ pub(crate) fn build_and_append<'a>(
     if witnesses.is_empty() {
         anyhow::bail!("{caller}: witnesses must be non-empty");
     }
-    let mut chain = R1csChainBuilder::new(prep)
-        .map_err(|e| anyhow::anyhow!("R1csChainBuilder::new: {e:?}"))?;
+    let mut chain =
+        R1csChainBuilder::new(prep).map_err(|e| anyhow::anyhow!("R1csChainBuilder::new: {e:?}"))?;
     for (i, z) in witnesses.into_iter().enumerate() {
         chain
             .append_assignment(z)
@@ -40,10 +40,7 @@ pub(crate) fn build_and_append<'a>(
 /// One-step usage matches the current `rfp_smoke` behaviour. Multi-step
 /// usage is the Track 1.3 deliverable — the same `prep` is shared across
 /// all appends because the step circuit shape is fixed.
-pub fn run_chain(
-    prep: &R1csFPrimePreprocessing,
-    witnesses: Vec<Vec<F>>,
-) -> Result<Uncompressed> {
+pub fn run_chain(prep: &R1csFPrimePreprocessing, witnesses: Vec<Vec<F>>) -> Result<Uncompressed> {
     build_and_append(prep, "run_chain", witnesses)?
         .finish()
         .map_err(|e| anyhow::anyhow!("chain.finish: {e:?}"))

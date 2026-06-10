@@ -96,7 +96,11 @@ fn main() -> Result<()> {
     // `--n-steps` times. Determine the effective step count up front because
     // the plan profile (smoke vs production accumulator) depends on it.
     let multi_witness = args.wtns.len() > 1;
-    let effective_steps = if multi_witness { args.wtns.len() } else { args.n_steps };
+    let effective_steps = if multi_witness {
+        args.wtns.len()
+    } else {
+        args.n_steps
+    };
 
     println!("=== 1/6 Parse Circom .r1cs + .wtns ===");
     let t = Instant::now();
@@ -144,11 +148,15 @@ fn main() -> Result<()> {
         zs[0].len(),
     );
 
-    println!("=== 3/6 R1CS row-wise satisfaction check ({} witness(es)) ===", zs.len());
+    println!(
+        "=== 3/6 R1CS row-wise satisfaction check ({} witness(es)) ===",
+        zs.len()
+    );
     let t = Instant::now();
     for (i, z) in zs.iter().enumerate() {
-        r1cs.is_satisfied_by(z)
-            .with_context(|| format!("witness[{i}] does not satisfy parsed R1CS — parser/witness bug"))?;
+        r1cs.is_satisfied_by(z).with_context(|| {
+            format!("witness[{i}] does not satisfy parsed R1CS — parser/witness bug")
+        })?;
     }
     println!("  passed in {:?}", t.elapsed());
 
@@ -190,7 +198,10 @@ fn main() -> Result<()> {
     let witnesses: Vec<Vec<_>> = if multi_witness {
         zs
     } else {
-        let z = zs.into_iter().next().expect("≥1 witness (clap requires --wtns)");
+        let z = zs
+            .into_iter()
+            .next()
+            .expect("≥1 witness (clap requires --wtns)");
         vec![z; args.n_steps]
     };
     if args.close {
@@ -224,8 +235,14 @@ fn main() -> Result<()> {
     }
 
     println!();
-    println!("RESULT: PASS — chain + {} verify all succeed.",
-        if args.close { "close_chain + Compressed" } else { "Uncompressed" });
+    println!(
+        "RESULT: PASS — chain + {} verify all succeed.",
+        if args.close {
+            "close_chain + Compressed"
+        } else {
+            "Uncompressed"
+        }
+    );
     println!("Total wall-clock: {:?}", t_total.elapsed());
     Ok(())
 }

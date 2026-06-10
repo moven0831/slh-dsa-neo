@@ -40,10 +40,7 @@ use crate::chain::build_and_append;
 /// [`chain::run_chain`](crate::chain::run_chain) but uses
 /// `finish_with_audit` instead of `finish`, then `compress` to close into a
 /// verifiable compressed artifact.
-pub fn close_chain(
-    prep: &R1csFPrimePreprocessing,
-    witnesses: Vec<Vec<F>>,
-) -> Result<Compressed> {
+pub fn close_chain(prep: &R1csFPrimePreprocessing, witnesses: Vec<Vec<F>>) -> Result<Compressed> {
     let audit = build_and_append(prep, "close_chain", witnesses)?
         .finish_with_audit()
         .map_err(|e| anyhow::anyhow!("chain.finish_with_audit: {e:?}"))?;

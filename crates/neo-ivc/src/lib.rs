@@ -10,8 +10,8 @@
 //!     4. 7-step chain   — fold all 7 XMSS layers into one CeClaim
 //!     5. Finisher       — Spartan2-GL close on accumulated CeClaim
 
-pub mod step;
 pub mod chain;
 pub mod finisher;
+pub mod step;
 
 // TODO: Phases 2–5.

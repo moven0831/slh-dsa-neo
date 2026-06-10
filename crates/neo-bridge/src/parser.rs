@@ -8,7 +8,7 @@
 //! - R1CS binary:  <https://github.com/iden3/r1csfile/blob/master/doc/r1cs_bin_format.md>
 //! - Witness:      <https://github.com/iden3/snarkjs/blob/master/src/wtns_format.md>
 
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{anyhow, bail, Context, Result};
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;

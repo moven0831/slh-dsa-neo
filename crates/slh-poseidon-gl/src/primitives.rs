@@ -15,8 +15,8 @@
 //! construction used by the secq256r1 Poseidon family.
 
 use crate::poseidon::{
-    pack_bytes16_to_2fe, poseidon_gl, poseidon_gl_hash30, poseidon_gl_reduce,
-    poseidon_gl_sponge14, unpack_fe2_to_bytes16,
+    pack_bytes16_to_2fe, poseidon_gl, poseidon_gl_hash30, poseidon_gl_reduce, poseidon_gl_sponge14,
+    unpack_fe2_to_bytes16,
 };
 
 const TAG_F: u64 = 0;
@@ -47,10 +47,17 @@ pub fn slh_f(pk_seed: &[u8; 16], adrs: &Adrs, m: &[u8; 16]) -> [u8; 16] {
     let (m_lo, m_hi) = pack_bytes16_to_2fe(m);
     let (out_lo, out_hi) = poseidon_gl(&[
         TAG_F,
-        pk_lo, pk_hi,
-        adrs.layer, adrs.tree_high, adrs.tree_low,
-        adrs.type_, adrs.keypair, adrs.chain, adrs.hash,
-        m_lo, m_hi,
+        pk_lo,
+        pk_hi,
+        adrs.layer,
+        adrs.tree_high,
+        adrs.tree_low,
+        adrs.type_,
+        adrs.keypair,
+        adrs.chain,
+        adrs.hash,
+        m_lo,
+        m_hi,
     ]);
     unpack_fe2_to_bytes16(out_lo, out_hi)
 }
@@ -63,10 +70,19 @@ pub fn slh_h(pk_seed: &[u8; 16], adrs: &Adrs, m: &[u8; 32]) -> [u8; 16] {
     let (m2_lo, m2_hi) = pack_bytes16_to_2fe(m[16..].try_into().unwrap());
     let (out_lo, out_hi) = poseidon_gl_sponge14(&[
         TAG_H,
-        pk_lo, pk_hi,
-        adrs.layer, adrs.tree_high, adrs.tree_low,
-        adrs.type_, adrs.keypair, adrs.chain, adrs.hash,
-        m1_lo, m1_hi, m2_lo, m2_hi,
+        pk_lo,
+        pk_hi,
+        adrs.layer,
+        adrs.tree_high,
+        adrs.tree_low,
+        adrs.type_,
+        adrs.keypair,
+        adrs.chain,
+        adrs.hash,
+        m1_lo,
+        m1_hi,
+        m2_lo,
+        m2_hi,
     ]);
     unpack_fe2_to_bytes16(out_lo, out_hi)
 }
@@ -80,10 +96,17 @@ fn slh_tk_or_tlen(pk_seed: &[u8; 16], adrs: &Adrs, leaves: &[[u8; 16]], tag: u64
     let (pk_lo, pk_hi) = pack_bytes16_to_2fe(pk_seed);
     let (out_lo, out_hi) = poseidon_gl(&[
         tag,
-        pk_lo, pk_hi,
-        adrs.layer, adrs.tree_high, adrs.tree_low,
-        adrs.type_, adrs.keypair, adrs.chain, adrs.hash,
-        red_lo, red_hi,
+        pk_lo,
+        pk_hi,
+        adrs.layer,
+        adrs.tree_high,
+        adrs.tree_low,
+        adrs.type_,
+        adrs.keypair,
+        adrs.chain,
+        adrs.hash,
+        red_lo,
+        red_hi,
     ]);
     unpack_fe2_to_bytes16(out_lo, out_hi)
 }
@@ -111,12 +134,7 @@ pub fn slh_tlen(pk_seed: &[u8; 16], adrs: &Adrs, leaves: &[[u8; 16]]) -> [u8; 16
 ///
 /// Domain separation: `poseidon_gl_hash30` uses internal sub-tags 0/1 — no
 /// outer HMsg=4 tag, matching the secq256r1 family's convention.
-pub fn slh_hmsg(
-    r: &[u8; 16],
-    pk_seed: &[u8; 16],
-    pk_root: &[u8; 16],
-    m: &[u8; 1024],
-) -> [u8; 30] {
+pub fn slh_hmsg(r: &[u8; 16], pk_seed: &[u8; 16], pk_root: &[u8; 16], m: &[u8; 1024]) -> [u8; 30] {
     let (r_lo, r_hi) = pack_bytes16_to_2fe(r);
     let (pk_seed_lo, pk_seed_hi) = pack_bytes16_to_2fe(pk_seed);
     let (pk_root_lo, pk_root_hi) = pack_bytes16_to_2fe(pk_root);
@@ -228,14 +246,13 @@ mod tests {
         // generate_witness.js run with input.json = {r: 1..16, pk_seed: [9;16],
         // pk_root: [42;16], m: [0;1024]}. Expected bytes via `snarkjs wtns export
         // json /tmp/slh_hmsg.wtns` taking w[1..=30].
-        let r = make_pk_seed();         // [1..=16]
+        let r = make_pk_seed(); // [1..=16]
         let pk_seed = [9u8; 16];
         let pk_root = [42u8; 16];
         let m = [0u8; 1024];
         let got = slh_hmsg(&r, &pk_seed, &pk_root, &m);
         let expected: [u8; 30] = [
-            71, 45, 32, 230, 198, 15, 38, 186, 91, 58,
-            126, 130, 6, 89, 5, 212, 159, 209, 9, 176,
+            71, 45, 32, 230, 198, 15, 38, 186, 91, 58, 126, 130, 6, 89, 5, 212, 159, 209, 9, 176,
             184, 29, 191, 94, 114, 85, 197, 22, 98, 173,
         ];
         assert_eq!(got, expected, "SlhHMsg output mismatch vs Circom witness");
@@ -252,15 +269,27 @@ mod tests {
 
         let baseline = slh_hmsg(&r, &pk_seed, &pk_root, &m);
 
-        let mut r2 = r;       r2[0] ^= 1;
-        let mut pk_seed2 = pk_seed; pk_seed2[0] ^= 1;
-        let mut pk_root2 = pk_root; pk_root2[0] ^= 1;
-        let mut m2 = m;       m2[123] = 7;
+        let mut r2 = r;
+        r2[0] ^= 1;
+        let mut pk_seed2 = pk_seed;
+        pk_seed2[0] ^= 1;
+        let mut pk_root2 = pk_root;
+        pk_root2[0] ^= 1;
+        let mut m2 = m;
+        m2[123] = 7;
 
-        assert_ne!(baseline, slh_hmsg(&r2, &pk_seed,  &pk_root,  &m),  "r ignored");
-        assert_ne!(baseline, slh_hmsg(&r,  &pk_seed2, &pk_root,  &m),  "pk_seed ignored");
-        assert_ne!(baseline, slh_hmsg(&r,  &pk_seed,  &pk_root2, &m),  "pk_root ignored");
-        assert_ne!(baseline, slh_hmsg(&r,  &pk_seed,  &pk_root,  &m2), "m ignored");
+        assert_ne!(baseline, slh_hmsg(&r2, &pk_seed, &pk_root, &m), "r ignored");
+        assert_ne!(
+            baseline,
+            slh_hmsg(&r, &pk_seed2, &pk_root, &m),
+            "pk_seed ignored"
+        );
+        assert_ne!(
+            baseline,
+            slh_hmsg(&r, &pk_seed, &pk_root2, &m),
+            "pk_root ignored"
+        );
+        assert_ne!(baseline, slh_hmsg(&r, &pk_seed, &pk_root, &m2), "m ignored");
 
         // Slot-swap: r vs pk_seed should yield different outputs.
         assert_ne!(
@@ -280,7 +309,10 @@ mod tests {
             }
         }
         let adrs0 = Adrs::default();
-        let adrs_layer1 = Adrs { layer: 1, ..Adrs::default() };
+        let adrs_layer1 = Adrs {
+            layer: 1,
+            ..Adrs::default()
+        };
 
         let out_a = slh_tlen(&pk_seed, &adrs0, &leaves);
         let out_b = slh_tlen(&pk_seed, &adrs0, &leaves);

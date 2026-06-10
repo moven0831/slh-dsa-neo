@@ -23,7 +23,10 @@ use slh_poseidon_gl::{
 };
 
 #[derive(Parser)]
-#[command(name = "slh-poseidon-gl", about = "Goldilocks Poseidon SLH-DSA-128s signer")]
+#[command(
+    name = "slh-poseidon-gl",
+    about = "Goldilocks Poseidon SLH-DSA-128s signer"
+)]
 struct Cli {
     #[command(subcommand)]
     cmd: Cmd,
@@ -118,7 +121,10 @@ fn main() -> Result<()> {
             }
             std::fs::write(&out, serde_json::to_vec(&v)?)
                 .with_context(|| format!("writing {}", out.display()))?;
-            println!("wrote {} (sign {elapsed:.2}s, self-verified ✓)", out.display());
+            println!(
+                "wrote {} (sign {elapsed:.2}s, self-verified ✓)",
+                out.display()
+            );
             println!("pk_root = {}", hex(&sk.pk_root));
         }
         Cmd::EmitLayers { seed, out_dir } => {

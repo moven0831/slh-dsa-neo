@@ -77,7 +77,10 @@ pub struct PublicKey {
 
 impl SecretKey {
     pub fn public_key(&self) -> PublicKey {
-        PublicKey { pk_seed: self.pk_seed, pk_root: self.pk_root }
+        PublicKey {
+            pk_seed: self.pk_seed,
+            pk_root: self.pk_root,
+        }
     }
 }
 
@@ -104,9 +107,15 @@ fn prf_sk(sk_seed: &[u8; N], adrs: &Adrs) -> [u8; N] {
     let (sk_lo, sk_hi) = pack_bytes16_to_2fe(sk_seed);
     let (out_lo, out_hi) = poseidon_gl(&[
         PRF_TAG,
-        sk_lo, sk_hi,
-        adrs.layer, adrs.tree_high, adrs.tree_low,
-        adrs.type_, adrs.keypair, adrs.chain, adrs.hash,
+        sk_lo,
+        sk_hi,
+        adrs.layer,
+        adrs.tree_high,
+        adrs.tree_low,
+        adrs.type_,
+        adrs.keypair,
+        adrs.chain,
+        adrs.hash,
     ]);
     unpack_fe2_to_bytes16(out_lo, out_hi)
 }
@@ -134,22 +143,37 @@ fn wots_pk_full(
     let mut ends = [[0u8; N]; LEN];
     for (i, end) in ends.iter_mut().enumerate() {
         let prf_adrs = Adrs {
-            layer, tree_high: 0, tree_low,
-            type_: WOTS_PRF, keypair, chain: i as u64, hash: 0,
+            layer,
+            tree_high: 0,
+            tree_low,
+            type_: WOTS_PRF,
+            keypair,
+            chain: i as u64,
+            hash: 0,
         };
         let mut cur = prf_sk(sk_seed, &prf_adrs);
         for k in 0..WOTS_MAX as u64 {
             let adrs = Adrs {
-                layer, tree_high: 0, tree_low,
-                type_: WOTS_HASH, keypair, chain: i as u64, hash: k,
+                layer,
+                tree_high: 0,
+                tree_low,
+                type_: WOTS_HASH,
+                keypair,
+                chain: i as u64,
+                hash: k,
             };
             cur = slh_f(pk_seed, &adrs, &cur);
         }
         *end = cur;
     }
     let pk_adrs = Adrs {
-        layer, tree_high: 0, tree_low,
-        type_: WOTS_PK, keypair, chain: 0, hash: 0,
+        layer,
+        tree_high: 0,
+        tree_low,
+        type_: WOTS_PK,
+        keypair,
+        chain: 0,
+        hash: 0,
     };
     slh_tlen(pk_seed, &pk_adrs, &ends)
 }
@@ -177,8 +201,13 @@ fn xmss_levels(
         let cur: Vec<[u8; N]> = (0..prev.len() / 2)
             .map(|n| {
                 let adrs = Adrs {
-                    layer, tree_high: 0, tree_low,
-                    type_: TREE, keypair: 0, chain: z as u64, hash: n as u64,
+                    layer,
+                    tree_high: 0,
+                    tree_low,
+                    type_: TREE,
+                    keypair: 0,
+                    chain: z as u64,
+                    hash: n as u64,
                 };
                 slh_h(pk_seed, &adrs, &join(&prev[2 * n], &prev[2 * n + 1]))
             })
@@ -216,13 +245,22 @@ fn fors_levels(
         .into_par_iter()
         .map(|j| {
             let prf_adrs = Adrs {
-                layer: 0, tree_high: 0, tree_low: idx_tree,
-                type_: FORS_PRF, keypair, chain: fors_idx, hash: j as u64,
+                layer: 0,
+                tree_high: 0,
+                tree_low: idx_tree,
+                type_: FORS_PRF,
+                keypair,
+                chain: fors_idx,
+                hash: j as u64,
             };
             let sk = prf_sk(sk_seed, &prf_adrs);
             let leaf_adrs = Adrs {
-                layer: 0, tree_high: 0, tree_low: idx_tree,
-                type_: FORS_TREE, keypair, chain: 0,
+                layer: 0,
+                tree_high: 0,
+                tree_low: idx_tree,
+                type_: FORS_TREE,
+                keypair,
+                chain: 0,
                 hash: fors_idx * num_leaves as u64 + j as u64,
             };
             slh_f(pk_seed, &leaf_adrs, &sk)
@@ -235,8 +273,12 @@ fn fors_levels(
         let cur: Vec<[u8; N]> = (0..prev.len() / 2)
             .map(|n| {
                 let adrs = Adrs {
-                    layer: 0, tree_high: 0, tree_low: idx_tree,
-                    type_: FORS_TREE, keypair, chain: z as u64,
+                    layer: 0,
+                    tree_high: 0,
+                    tree_low: idx_tree,
+                    type_: FORS_TREE,
+                    keypair,
+                    chain: z as u64,
                     hash: fors_idx * (num_leaves as u64 >> z) + n as u64,
                 };
                 slh_h(pk_seed, &adrs, &join(&prev[2 * n], &prev[2 * n + 1]))
@@ -298,7 +340,11 @@ fn parse_digest(digest: &[u8; 30]) -> ([u64; K_FORS], u64, u64) {
 pub fn keygen(sk_seed: [u8; N], pk_seed: [u8; N]) -> SecretKey {
     let levels = xmss_levels(&pk_seed, &sk_seed, (D - 1) as u64, 0);
     let pk_root = levels[HPRIME][0];
-    SecretKey { sk_seed, pk_seed, pk_root }
+    SecretKey {
+        sk_seed,
+        pk_seed,
+        pk_root,
+    }
 }
 
 /// Sign `msg` (fixed 1024 bytes) with randomizer `r`. FIPS 205 §10.2
@@ -320,8 +366,13 @@ pub fn sign(sk: &SecretKey, msg: &[u8; 1024], r: [u8; N]) -> Signature {
 
         let mut sig_i = [[0u8; N]; A_FORS + 1];
         let prf_adrs = Adrs {
-            layer: 0, tree_high: 0, tree_low: idx_tree,
-            type_: FORS_PRF, keypair: idx_leaf, chain: i as u64, hash: md_indices[i],
+            layer: 0,
+            tree_high: 0,
+            tree_low: idx_tree,
+            type_: FORS_PRF,
+            keypair: idx_leaf,
+            chain: i as u64,
+            hash: md_indices[i],
         };
         sig_i[0] = prf_sk(sk_seed, &prf_adrs);
         let mut idx = leaf_idx;
@@ -335,8 +386,13 @@ pub fn sign(sk: &SecretKey, msg: &[u8; 1024], r: [u8; N]) -> Signature {
 
     // pk_fors = T_k(fors_roots).
     let fors_adrs = Adrs {
-        layer: 0, tree_high: 0, tree_low: idx_tree,
-        type_: FORS_ROOTS, keypair: idx_leaf, chain: 0, hash: 0,
+        layer: 0,
+        tree_high: 0,
+        tree_low: idx_tree,
+        type_: FORS_ROOTS,
+        keypair: idx_leaf,
+        chain: 0,
+        hash: 0,
     };
     let pk_fors = slh_tk(pk_seed, &fors_adrs, &fors_roots);
 
@@ -352,15 +408,25 @@ pub fn sign(sk: &SecretKey, msg: &[u8; 1024], r: [u8; N]) -> Signature {
         let mut sig_j = [[0u8; N]; LEN + HPRIME];
         for i in 0..LEN {
             let prf_adrs = Adrs {
-                layer: j as u64, tree_high: 0, tree_low: cur_idx_tree,
-                type_: WOTS_PRF, keypair: cur_idx_leaf, chain: i as u64, hash: 0,
+                layer: j as u64,
+                tree_high: 0,
+                tree_low: cur_idx_tree,
+                type_: WOTS_PRF,
+                keypair: cur_idx_leaf,
+                chain: i as u64,
+                hash: 0,
             };
             let mut cur = prf_sk(sk_seed, &prf_adrs);
             // WOTS sig value = chain position `chunks[i]` (hash addresses 0..chunks[i]-1).
             for k in 0..chunks[i] as u64 {
                 let adrs = Adrs {
-                    layer: j as u64, tree_high: 0, tree_low: cur_idx_tree,
-                    type_: WOTS_HASH, keypair: cur_idx_leaf, chain: i as u64, hash: k,
+                    layer: j as u64,
+                    tree_high: 0,
+                    tree_low: cur_idx_tree,
+                    type_: WOTS_HASH,
+                    keypair: cur_idx_leaf,
+                    chain: i as u64,
+                    hash: k,
                 };
                 cur = slh_f(pk_seed, &adrs, &cur);
             }
@@ -377,7 +443,11 @@ pub fn sign(sk: &SecretKey, msg: &[u8; 1024], r: [u8; N]) -> Signature {
         }
     }
 
-    Signature { r, sig_fors, sig_ht }
+    Signature {
+        r,
+        sig_fors,
+        sig_ht,
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -400,16 +470,26 @@ fn wots_pk_from_sig(
         let start = chunks[i] as u64;
         for k in 0..(WOTS_MAX as u64 - start) {
             let adrs = Adrs {
-                layer, tree_high: 0, tree_low,
-                type_: WOTS_HASH, keypair, chain: i as u64, hash: start + k,
+                layer,
+                tree_high: 0,
+                tree_low,
+                type_: WOTS_HASH,
+                keypair,
+                chain: i as u64,
+                hash: start + k,
             };
             cur = slh_f(pk_seed, &adrs, &cur);
         }
         *end = cur;
     }
     let pk_adrs = Adrs {
-        layer, tree_high: 0, tree_low,
-        type_: WOTS_PK, keypair, chain: 0, hash: 0,
+        layer,
+        tree_high: 0,
+        tree_low,
+        type_: WOTS_PK,
+        keypair,
+        chain: 0,
+        hash: 0,
     };
     slh_tlen(pk_seed, &pk_adrs, &ends)
 }
@@ -432,8 +512,13 @@ fn xmss_root_from_sig(
             (auth[k], node)
         };
         let adrs = Adrs {
-            layer, tree_high: 0, tree_low,
-            type_: TREE, keypair: 0, chain: (k + 1) as u64, hash: idx_leaf >> (k + 1),
+            layer,
+            tree_high: 0,
+            tree_low,
+            type_: TREE,
+            keypair: 0,
+            chain: (k + 1) as u64,
+            hash: idx_leaf >> (k + 1),
         };
         node = slh_h(pk_seed, &adrs, &join(&left, &right));
     }
@@ -451,8 +536,12 @@ fn fors_pk_from_sig(
     let mut roots: Vec<[u8; N]> = Vec::with_capacity(K_FORS);
     for i in 0..K_FORS {
         let leaf_adrs = Adrs {
-            layer: 0, tree_high: 0, tree_low: idx_tree,
-            type_: FORS_TREE, keypair: idx_leaf, chain: 0,
+            layer: 0,
+            tree_high: 0,
+            tree_low: idx_tree,
+            type_: FORS_TREE,
+            keypair: idx_leaf,
+            chain: 0,
             hash: i as u64 * 4096 + md_indices[i],
         };
         let mut node = slh_f(pk_seed, &leaf_adrs, &sig_fors[i][0]);
@@ -464,8 +553,12 @@ fn fors_pk_from_sig(
                 (sig_fors[i][z], node)
             };
             let adrs = Adrs {
-                layer: 0, tree_high: 0, tree_low: idx_tree,
-                type_: FORS_TREE, keypair: idx_leaf, chain: z as u64,
+                layer: 0,
+                tree_high: 0,
+                tree_low: idx_tree,
+                type_: FORS_TREE,
+                keypair: idx_leaf,
+                chain: z as u64,
                 hash: i as u64 * (1 << (12 - z)) + (md_indices[i] >> z),
             };
             node = slh_h(pk_seed, &adrs, &join(&left, &right));
@@ -473,8 +566,13 @@ fn fors_pk_from_sig(
         roots.push(node);
     }
     let adrs = Adrs {
-        layer: 0, tree_high: 0, tree_low: idx_tree,
-        type_: FORS_ROOTS, keypair: idx_leaf, chain: 0, hash: 0,
+        layer: 0,
+        tree_high: 0,
+        tree_low: idx_tree,
+        type_: FORS_ROOTS,
+        keypair: idx_leaf,
+        chain: 0,
+        hash: 0,
     };
     slh_tk(pk_seed, &adrs, &roots)
 }
@@ -497,13 +595,27 @@ pub fn verify(pk: &PublicKey, msg: &[u8; 1024], sig: &Signature) -> bool {
         let (tree_low, leaf) = if j == 0 {
             (idx_tree, idx_leaf)
         } else {
-            (idx_tree >> (HPRIME * j), (idx_tree >> (HPRIME * (j - 1))) & 0x1ff)
+            (
+                idx_tree >> (HPRIME * j),
+                (idx_tree >> (HPRIME * (j - 1))) & 0x1ff,
+            )
         };
         let chunks = base2b_with_csum(&layer_msg);
-        let wots_pk =
-            wots_pk_from_sig(&pk.pk_seed, j as u64, tree_low, leaf, &chunks, &sig.sig_ht[j][..LEN]);
+        let wots_pk = wots_pk_from_sig(
+            &pk.pk_seed,
+            j as u64,
+            tree_low,
+            leaf,
+            &chunks,
+            &sig.sig_ht[j][..LEN],
+        );
         node = xmss_root_from_sig(
-            &pk.pk_seed, j as u64, tree_low, leaf, &wots_pk, &sig.sig_ht[j][LEN..],
+            &pk.pk_seed,
+            j as u64,
+            tree_low,
+            leaf,
+            &wots_pk,
+            &sig.sig_ht[j][LEN..],
         );
         layer_msg = node;
     }
@@ -519,9 +631,17 @@ pub fn verify(pk: &PublicKey, msg: &[u8; 1024], sig: &Signature) -> bool {
 /// byte values as JSON numbers. The circuit packs/reduces these identically
 /// to the signer, so `valid == 1` iff the signature verifies.
 pub fn witness_json(pk: &PublicKey, msg: &[u8; 1024], sig: &Signature) -> serde_json::Value {
-    let pk_bytes: Vec<u8> = pk.pk_seed.iter().chain(pk.pk_root.iter()).copied().collect();
+    let pk_bytes: Vec<u8> = pk
+        .pk_seed
+        .iter()
+        .chain(pk.pk_root.iter())
+        .copied()
+        .collect();
     let nest3 = |outer: &[&[[u8; N]]]| -> Vec<Vec<Vec<u8>>> {
-        outer.iter().map(|tree| tree.iter().map(|n| n.to_vec()).collect()).collect()
+        outer
+            .iter()
+            .map(|tree| tree.iter().map(|n| n.to_vec()).collect())
+            .collect()
     };
     let sig_fors: Vec<&[[u8; N]]> = sig.sig_fors.iter().map(|t| t.as_slice()).collect();
     let sig_ht: Vec<&[[u8; N]]> = sig.sig_ht.iter().map(|t| t.as_slice()).collect();
@@ -561,7 +681,11 @@ pub struct HtLayerWitness {
 /// Decompose a signature into the `D` per-HT-layer step witnesses, exactly as
 /// `HtVerify` walks them. Reuses the same per-layer reconstruction as
 /// `verify`, so each `next_root` is what `bench_ht_layer_gl.circom` outputs.
-pub fn ht_layer_witnesses(pk: &PublicKey, msg: &[u8; 1024], sig: &Signature) -> Vec<HtLayerWitness> {
+pub fn ht_layer_witnesses(
+    pk: &PublicKey,
+    msg: &[u8; 1024],
+    sig: &Signature,
+) -> Vec<HtLayerWitness> {
     let digest = slh_hmsg(&sig.r, &pk.pk_seed, &pk.pk_root, msg);
     let (md_indices, idx_tree, idx_leaf) = parse_digest(&digest);
     let fors_pk = fors_pk_from_sig(&pk.pk_seed, idx_tree, idx_leaf, &md_indices, &sig.sig_fors);
@@ -572,13 +696,27 @@ pub fn ht_layer_witnesses(pk: &PublicKey, msg: &[u8; 1024], sig: &Signature) -> 
         let (tree_low, leaf) = if j == 0 {
             (idx_tree, idx_leaf)
         } else {
-            (idx_tree >> (HPRIME * j), (idx_tree >> (HPRIME * (j - 1))) & 0x1ff)
+            (
+                idx_tree >> (HPRIME * j),
+                (idx_tree >> (HPRIME * (j - 1))) & 0x1ff,
+            )
         };
         let chunks = base2b_with_csum(&layer_msg);
-        let wots_pk =
-            wots_pk_from_sig(&pk.pk_seed, j as u64, tree_low, leaf, &chunks, &sig.sig_ht[j][..LEN]);
+        let wots_pk = wots_pk_from_sig(
+            &pk.pk_seed,
+            j as u64,
+            tree_low,
+            leaf,
+            &chunks,
+            &sig.sig_ht[j][..LEN],
+        );
         let next_root = xmss_root_from_sig(
-            &pk.pk_seed, j as u64, tree_low, leaf, &wots_pk, &sig.sig_ht[j][LEN..],
+            &pk.pk_seed,
+            j as u64,
+            tree_low,
+            leaf,
+            &wots_pk,
+            &sig.sig_ht[j][LEN..],
         );
 
         let mut wots_sig = [[0u8; N]; LEN];
@@ -648,7 +786,10 @@ mod tests {
         let m = msg();
         let r = [42u8; N];
         let sig = sign(&sk, &m, r);
-        assert!(verify(&sk.public_key(), &m, &sig), "valid signature must verify");
+        assert!(
+            verify(&sk.public_key(), &m, &sig),
+            "valid signature must verify"
+        );
     }
 
     #[test]
@@ -659,7 +800,10 @@ mod tests {
         let mut sig = sign(&sk, &m, [42u8; N]);
         // Flip one byte of one WOTS chain value.
         sig.sig_ht[0][0][0] ^= 1;
-        assert!(!verify(&sk.public_key(), &m, &sig), "tampered HT sig must not verify");
+        assert!(
+            !verify(&sk.public_key(), &m, &sig),
+            "tampered HT sig must not verify"
+        );
     }
 
     #[test]
@@ -669,7 +813,10 @@ mod tests {
         let sig = sign(&sk, &msg(), [42u8; N]);
         let mut m2 = msg();
         m2[500] ^= 0xff;
-        assert!(!verify(&sk.public_key(), &m2, &sig), "signature must not verify a different message");
+        assert!(
+            !verify(&sk.public_key(), &m2, &sig),
+            "signature must not verify a different message"
+        );
     }
 
     #[test]
@@ -696,10 +843,18 @@ mod tests {
         assert_eq!(layers.len(), D);
         // Each layer's next_root feeds the next layer's prev_root.
         for j in 1..D {
-            assert_eq!(layers[j].prev_root, layers[j - 1].next_root, "layer {j} prev_root != prev next_root");
+            assert_eq!(
+                layers[j].prev_root,
+                layers[j - 1].next_root,
+                "layer {j} prev_root != prev next_root"
+            );
         }
         // The top layer reconstructs pk_root — the same check HtVerify asserts.
-        assert_eq!(layers[D - 1].next_root, sk.pk_root, "top layer next_root != pk_root");
+        assert_eq!(
+            layers[D - 1].next_root,
+            sk.pk_root,
+            "top layer next_root != pk_root"
+        );
         // Layer 0's prev_root is the FORS pubkey, distinct from the input msg.
         assert_eq!(layers[0].layer, 0);
         assert_eq!(layers[D - 1].layer, (D - 1) as u64);

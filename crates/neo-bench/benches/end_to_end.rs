@@ -1,4 +1,4 @@
-use criterion::{Criterion, criterion_group, criterion_main};
+use criterion::{criterion_group, criterion_main, Criterion};
 
 fn end_to_end(c: &mut Criterion) {
     // TODO: Phase 6 — headline number: sign + witness + 7-fold + finisher.

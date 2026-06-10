@@ -19,12 +19,8 @@ use neo_fold_clean::frontends::f_prime::recursive_plan::{
     build_recursive_step_image_config, AccumulatorPlanOptions, RecursiveStepImagePlan,
     StateXOutPlanOptions,
 };
-use neo_fold_clean::frontends::r1cs_f_prime::{
-    self, R1csFPrimePreprocessing, SparseR1cs,
-};
-use neo_fold_clean::paper::f_prime::ring_action_trace::{
-    LowNormEncoding, RingActionTraceLayout,
-};
+use neo_fold_clean::frontends::r1cs_f_prime::{self, R1csFPrimePreprocessing, SparseR1cs};
+use neo_fold_clean::paper::f_prime::ring_action_trace::{LowNormEncoding, RingActionTraceLayout};
 
 /// Mirror `BOUNDARY_BITS` from the Nightstream test (4 × 64 = 256).
 pub const BOUNDARY_BITS: usize = 4 * POSEIDON2_GOLDILOCKS_BITS;

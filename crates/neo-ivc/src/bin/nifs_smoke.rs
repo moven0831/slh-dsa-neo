@@ -142,9 +142,7 @@ fn main() -> Result<()> {
     }
 
     println!();
-    println!(
-        "RESULT: PASS — Nightstream NIFS prove + verify both succeed on the smoke circuit."
-    );
+    println!("RESULT: PASS — Nightstream NIFS prove + verify both succeed on the smoke circuit.");
     println!("        Week-3 forcing condition CLEARED. Phase 3 (486K HT-layer) is unblocked.");
     Ok(())
 }
