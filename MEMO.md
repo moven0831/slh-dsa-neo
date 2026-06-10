@@ -1,5 +1,9 @@
 # Memo: Folding SLH-DSA-128s on Nightstream — measured
 
+> **New here? Start with the [README](README.md)** for the concise wrap-up (result, what's in the
+> repo, how to reproduce). This memo is the deep-dive appendix: every measured number, methodology,
+> and session log.
+>
 > **Status: Pivot A measured.** `r1cs_f_prime` end-to-end production-params NIFS prove + verify on the D4 step circuit. Real numbers below. Full write-up: [`slh-dsa-circuit/research/folding/week3_findings.md`](https://github.com/moven0831/slh-dsa-circuit/blob/main/research/folding/week3_findings.md).
 
 ## TL;DR
