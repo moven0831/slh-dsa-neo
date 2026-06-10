@@ -18,8 +18,8 @@ monolithic result measurable, so the work paid off — just in a different place
 Why folding loses (structural, not a bug): Poseidon emits full-range 64-bit witnesses, but
 post-quantum lattice folding can only commit to bit-sized values, so it bit-decomposes every wire —
 a **64× row blow-up** (486K-row step → `m×64+1 = 29,934,145`-row F' structure). Full reasoning and
-per-stage breakdown in [`MEMO.md`](MEMO.md); cross-repo write-up in
-[`../summary.md`](https://github.com/moven0831/slh-dsa-128s-poseidon-bench) and the
+per-stage breakdown in [`MEMO.md`](MEMO.md); the cross-repo comparison lives in the
+[companion benchmark](https://github.com/moven0831/slh-dsa-128s-poseidon-bench) and the
 [research memo](https://github.com/moven0831/slh-dsa-circuit/blob/main/research/folding/week3_findings.md).
 
 ## Headline (M3 / 24 GB, single-thread)
