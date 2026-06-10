@@ -4,7 +4,7 @@
 > repo, how to reproduce). This memo is the deep-dive appendix: every measured number, methodology,
 > and session log.
 >
-> **Status: Pivot A measured.** `r1cs_f_prime` end-to-end production-params NIFS prove + verify on the D4 step circuit. Real numbers below. Full write-up: [`slh-dsa-circuit/research/folding/week3_findings.md`](https://github.com/moven0831/slh-dsa-circuit/blob/main/research/folding/week3_findings.md).
+> **Status: folding measured.** `r1cs_f_prime` end-to-end production-params NIFS prove + verify on the D4 step circuit. Real numbers below. Full write-up: [`slh-dsa-circuit/research/folding/week3_findings.md`](https://github.com/moven0831/slh-dsa-circuit/blob/main/research/folding/week3_findings.md).
 
 ## TL;DR
 
@@ -24,7 +24,7 @@ Extrapolated full D4 chain (7 folds): **~815 s prove**, vs the companion repo's 
 | Path | Status |
 |---|---|
 | `crates/neo-ivc/src/bin/nifs_smoke.rs` | Original Phase-2 binary. Demonstrates the `b = 2` binary-witness rejection from `direct_ccs::build_instance`. <0.3 s. |
-| `crates/neo-ivc/src/bin/rfp_smoke.rs` | **Pivot A binary.** Runs `r1cs_f_prime` end-to-end (preprocess → chain.append → finish → verify_uncompressed) on a Circom Goldilocks R1CS. Supports `--sparse` for circuits beyond ~10K wires. 5 s on smoke, 227 s on HT-layer. |
+| `crates/neo-ivc/src/bin/rfp_smoke.rs` | **Main folding binary.** Runs `r1cs_f_prime` end-to-end (preprocess → chain.append → finish → verify_uncompressed) on a Circom Goldilocks R1CS. Supports `--sparse` for circuits beyond ~10K wires. 5 s on smoke, 227 s on HT-layer. |
 | `crates/neo-ivc/src/{step,chain,finisher}.rs` | **Library API** (Session 2026-05-28). `step::build_plan` + `step::preprocess_sparse` extract the rfp_smoke plan-construction. `chain::run_chain` appends multiple witnesses against one preprocessing then finishes. `finisher::close_chain` uses the audit-mode `compress` path to produce a `Compressed` proof + verifier. Builds clean; multi-step run not yet measured. |
 | `crates/neo-bridge/` | Circom `.r1cs` + `.wtns` parser + dense and sparse lift to `neo_ccs` matrices |
 | `crates/slh-poseidon-gl/` | **Full SLH-DSA-128s signer + verifier** (Session 2026-05-28). Plonky2 Poseidon t=12 byte-matches 4 reference vectors; F/H/T_k/T_len/H_msg byte-match Circom bench witnesses. `signer.rs` ports the FIPS 205 control flow (keygen/WOTS+/FORS/XMSS/HT) from `poseidon_sign.mjs` onto the Goldilocks primitives; `verify()` mirrors the circuit. **Validated end-to-end**: `cli emit-monolithic` → the real `main_poseidon_gl.circom` WASM witness generator returns `valid == 1` (and a tampered input fails the `xmss_root === pk_root` asserts). Leaf loops parallelized with rayon; sign ≈ 6 s on M3. |
@@ -50,7 +50,7 @@ PCS** (secq256r1+Hyrax → Goldilocks+Hash-MLE), not pure field — the verify
 speedup and larger proof are mostly the PCS swap. Timings carry ±25%
 run-to-run variance on the loaded 24 GB box; artifact sizes are deterministic.
 
-**Latent bug found + fixed in the Track 2.2 adapter.** The setup-only path
+**Latent bug found + fixed in the Spartan2-GL adapter.** The setup-only path
 never exercised prove/verify, hiding a bug: `Circom2SpartanCircuit::public_values()`
 declared one public output (the circuit's `valid` wire) but `synthesize` never
 `inputize()`d it. Prove succeeded but verify returned `InvalidSumcheckProof`
@@ -150,17 +150,17 @@ Both `rfp_smoke` runs print `RESULT: PASS — r1cs_f_prime prove + finish + veri
 
 ## What this changes about the original plan
 
-The original Pivot A goal was to settle whether folding via `r1cs_f_prime` is competitive with monolithic Spartan2. It now has an answer: **it isn't — ~50× slower in prover wall-clock (~32× when verify is included).** That's a real number; it makes folding for this circuit a research direction, not a competitive path.
+The original goal of the folding track was to settle whether folding via `r1cs_f_prime` is competitive with monolithic Spartan2. It now has an answer: **it isn't — ~50× slower in prover wall-clock (~32× when verify is included).** That's a real number; it makes folding for this circuit a research direction, not a competitive path.
 
 Next moves:
-- **Pivot B** — Spartan2-GL monolithic bench (no folding). Cleanest comparison to the companion's secq256r1 monolith; quantifies the small-field benefit honestly. Reuses the Goldilocks Poseidon port. Recommended next step.
-- **Pivot C** — LatticeFold gadget-norm fix at verify. 5× decomposition vs Nightstream's 64× — *if* the verify-side bug fix lands (~1 engineer-day per `poseidon_gl_audit.md` line 144), a re-run of `rfp_smoke`-equivalent on LatticeFold could be ~6–9 s/step instead of 116.6 s/step. The most plausible path to a competitive folded number.
+- **The monolithic Spartan2-GL benchmark (no folding).** Cleanest comparison to the companion's secq256r1 monolith; quantifies the small-field benefit honestly. Reuses the Goldilocks Poseidon port. Recommended next step.
+- **LatticeFold (gadget-norm fix at verify).** 5× decomposition vs Nightstream's 64× — *if* the verify-side bug fix lands (~1 engineer-day per `poseidon_gl_audit.md` line 144), a re-run of `rfp_smoke`-equivalent on LatticeFold could be ~6–9 s/step instead of 116.6 s/step. The most plausible path to a competitive folded number.
 
-## Session 2026-05-28 — Pivot A "Finish" track progress
+## Session 2026-05-28 — folding-track completion progress
 
-User-approved scope: complete Pivot A (slh-dsa-neo) + add Spartan2-GL baseline
-to the companion repo. This session covered T1.1.a/b + T1.2/T1.3/T1.4 of the
-12-task plan in `~/.claude/plans/is-there-anything-we-glittery-unicorn.md`.
+Scope this session: complete the folding measurements in this repo and add the
+Spartan2-GL monolithic baseline to the companion repo (the signer/primitives
+port, the multi-step library API, and the real three-row table).
 
 **Implemented and tested:**
 
@@ -190,7 +190,7 @@ to the companion repo. This session covered T1.1.a/b + T1.2/T1.3/T1.4 of the
 
 **API gap surfaced (revises plan):**
 
-- The original plan's Track 1.4 referenced `neo_fold_prototype::lifecycle::finish_direct_ccs_with_spartan`
+- The planned closing-SNARK step referenced `neo_fold_prototype::lifecycle::finish_direct_ccs_with_spartan`
   as the Spartan2-GL closer. Verification: that entry point exists only for
   the `direct_ccs` and `rv32im` frontends. **There is no
   `finish_r1cs_f_prime_with_spartan` in Nightstream `755c1595`.** The
@@ -198,8 +198,8 @@ to the companion repo. This session covered T1.1.a/b + T1.2/T1.3/T1.4 of the
   `Compressed`. A true Spartan2-GL final SNARK on `r1cs_f_prime` would need
   custom plumbing: `lifecycle::build_decider_statement` →
   `decider::Statement` → standalone `spartan2::R1CSSNARK<GoldilocksP3MerkleMleEngine>`.
-  Track 1.4 in this session implements the `compress` path. A true
-  Spartan2-GL closing SNARK measurement remains separate work.
+  This session implements the `compress` path. A true Spartan2-GL closing
+  SNARK measurement remains separate work.
 
 - **Runtime test of `compress` (Session 2026-05-28)**: smoke single-step
   `--close` returns `Decider(Unsupported)` at runtime. `compress.rs:4-5`
@@ -209,11 +209,11 @@ to the companion repo. This session covered T1.1.a/b + T1.2/T1.3/T1.4 of the
   `r1cs_f_prime`** — only `Uncompressed` is verifiable. The `close_chain`
   / `verify_compressed` library functions are kept in place for when
   upstream lands the decider, with the top-of-file note in
-  `crates/neo-ivc/src/finisher.rs` documenting the gap. Track 1.4-bis
-  options: (a) upgrade Nightstream to a commit where `decider::prove`
+  `crates/neo-ivc/src/finisher.rs` documenting the gap. Options to close the
+  chain: (a) upgrade Nightstream to a commit where `decider::prove`
   works, or (b) custom-plumb `build_decider_statement` →
-  `decider::Statement` → standalone Spartan2-GL adapter (same adapter
-  Track 2.2 will need).
+  `decider::Statement` → standalone Spartan2-GL adapter (the same adapter
+  the Spartan2-GL baseline needs).
 
 **First multi-step measurement (Session 2026-05-28, smoke circuit):**
 
@@ -235,7 +235,7 @@ at `r1cs_compiler.rs:580`).
 | **Total** | **109.4 s** |
 | Peak RSS | **9.99 GB** |
 
-Compare with Pivot A's single-step smoke at c=2: 2.07 s prove+finish per
+Compare with the single-step smoke at c=2: 2.07 s prove+finish per
 step. Per-step prove cost grew **~22×** on the 440-R1CS smoke when
 switching c=2 → c=972. The Ajtai-setup grew **~8.5×** (1.7 s → 14.4 s).
 This is the **first measured floor overhead** for the production-params
@@ -250,16 +250,16 @@ the HT-layer run.
 
 **Done since the last memo:**
 
-- T1.1.c — full SLH-DSA-128s signer + verifier (`signer.rs`), validated
+- Full SLH-DSA-128s signer + verifier (`signer.rs`), validated
   end-to-end against `main_poseidon_gl.circom` (`valid == 1`). ✓
-- T1.1.d — signer CLI (`emit-monolithic`, `self-check`). ✓ (emits the
+- Signer CLI (`emit-monolithic`, `self-check`). ✓ (emits the
   monolithic witness; per-XMSS-layer emission for the folded path is the one
   remaining CLI sub-feature — see below.)
-- T2.1/T2.2/T2.3 — monolithic Goldilocks circuit, Spartan2-GL bench crate,
+- Monolithic Goldilocks circuit, Spartan2-GL bench crate,
   and the now-real three-row table. ✓ (Row 2 prove/verify measured; the
   `inputize` adapter bug was found and fixed here.)
 
-- T1.1.d `emit-layers` — per-XMSS-layer witness JSONs in the
+- `emit-layers` — per-XMSS-layer witness JSONs in the
   `bench_ht_layer_gl.circom` layout. ✓ All 7 layers validated against the
   per-layer circuit (chain to `pk_root`) and layer 0 folded + verified
   through `r1cs_f_prime`.
@@ -276,10 +276,10 @@ the HT-layer run.
   32 GB+ box** — re-run `rfp_smoke_full --profile production --r-len 26
   --wtns layer_0.wtns … --wtns layer_6.wtns` there. Per-step cost is already
   real-measured (139 s/step); only the full-chain total is gated on RAM.
-- Track 1.4-bis — true Spartan2-GL closing SNARK on `r1cs_f_prime`
+- Closing SNARK — a true Spartan2-GL closing SNARK on `r1cs_f_prime`
   (`Decider(Unsupported)` at Nightstream 755c1595; needs custom plumbing
   through `build_decider_statement` + the standalone Spartan2-GL adapter
-  Track 2.2 already built).
+  the baseline already built).
 
 ## Methodology
 

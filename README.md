@@ -1,8 +1,8 @@
-# SLH-DSA-128s + Neo folding — Pivot A: production-params measurements
+# SLH-DSA-128s + Neo folding — production-params measurements
 
 The **folding prover** in a three-repo study of proving SLH-DSA-128s (Poseidon hash) cheaply:
 
-- **this repo** — folds SLH-DSA-128s verification via [Nightstream](https://github.com/LFDT-Nightstream/Nightstream) / Neo on Goldilocks (Pivot A).
+- **this repo** — folds SLH-DSA-128s verification via [Nightstream](https://github.com/LFDT-Nightstream/Nightstream) / Neo on Goldilocks.
 - [`slh-dsa-128s-poseidon-bench`](https://github.com/moven0831/slh-dsa-128s-poseidon-bench) — the monolithic Spartan2 prover benchmark (the baseline we compare against, **and where the actual win lives**).
 - [`slh-dsa-circuit`](https://github.com/moven0831/slh-dsa-circuit) — the Circom R1CS benchmark + folding research notes.
 
@@ -51,7 +51,7 @@ through `r1cs_f_prime`.
 | Path | Status |
 |---|---|
 | `crates/slh-poseidon-gl/` | **Full FIPS 205 SLH-DSA-128s signer + verifier** on Plonky2 Goldilocks Poseidon (t=12, 30 rounds, x⁷), byte-exact vs Circom. Validated end-to-end; emits witnesses for both the monolithic and folded paths (`emit-monolithic`, `emit-layers`, `self-check`). |
-| `crates/neo-ivc/src/bin/rfp_smoke.rs` | **Pivot A binary.** Runs `r1cs_f_prime` end-to-end at production params. `--sparse` for HT-layer scale. |
+| `crates/neo-ivc/src/bin/rfp_smoke.rs` | **Main folding binary.** Runs `r1cs_f_prime` end-to-end at production params. `--sparse` for HT-layer scale. |
 | `crates/neo-ivc/` (`step`/`chain`/`finisher`) | Multi-step library API: `step::preprocess_sparse`, `chain::run_chain`, `finisher::close_chain`. (Finisher returns `Decider(Unsupported)` at Nightstream `755c1595` — see limitation.) |
 | `crates/neo-ivc/src/bin/nifs_smoke.rs` | Phase-2 binary; demonstrates the `b = 2` rejection from `direct_ccs::build_instance` in <0.3 s. Historical / superseded. |
 | `crates/neo-bridge/` | Working Circom `.r1cs` + `.wtns` parser; dense + sparse lift to `neo_ccs` matrices. |
